@@ -61,7 +61,12 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const webhookUrl = `${process.env.NEXT_PUBLIC_APP_URL}/api/webhooks/astria?secret=${process.env.ASTRIA_WEBHOOK_SECRET}`;
+    // Only register webhook if a publicly-reachable URL is configured.
+    // In local dev (no ngrok), we rely on the polling endpoint instead.
+    const publicUrl = process.env.ASTRIA_WEBHOOK_PUBLIC_URL;
+    const webhookUrl = publicUrl
+      ? `${publicUrl}/api/webhooks/astria?secret=${process.env.ASTRIA_WEBHOOK_SECRET}`
+      : undefined;
 
     const tune = await createTune({
       title: modelName,

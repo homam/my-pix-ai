@@ -3,6 +3,7 @@ import { redirect, notFound } from "next/navigation";
 import { Model, GeneratedImage } from "@/types";
 import { GenerateSection } from "@/components/GenerateSection";
 import { ModelStatusBadge } from "@/components/ModelStatusBadge";
+import { TrainingProgress } from "@/components/TrainingProgress";
 import { getBalance } from "@/lib/credits";
 import { CREDIT_COSTS } from "@/types";
 
@@ -64,14 +65,7 @@ export default async function ModelPage({
           creditCost={CREDIT_COSTS.GENERATION}
         />
       ) : (model as Model).status === "training" ? (
-        <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-8 text-center">
-          <div className="w-12 h-12 border-2 border-blue-400 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-          <h2 className="text-lg font-medium mb-2">Training in progress</h2>
-          <p className="text-gray-400 text-sm">
-            Your model is being trained. This usually takes 10–15 minutes.
-            You&apos;ll receive an email when it&apos;s ready.
-          </p>
-        </div>
+        <TrainingProgress modelId={(model as Model).id} />
       ) : (model as Model).status === "failed" ? (
         <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-8 text-center">
           <h2 className="text-lg font-medium text-red-300 mb-2">

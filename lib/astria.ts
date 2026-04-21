@@ -13,14 +13,14 @@ function headers() {
 export interface CreateTuneParams {
   title: string;
   imageUrls: string[];
-  webhookUrl: string;
+  webhookUrl?: string;
   modelName?: string;
 }
 
 export async function createTune(params: CreateTuneParams): Promise<AstriaTune> {
   const { title, imageUrls, webhookUrl, modelName = "ohwx person" } = params;
 
-  const body = {
+  const body: Record<string, unknown> = {
     tune: {
       title,
       name: modelName,
@@ -28,8 +28,8 @@ export async function createTune(params: CreateTuneParams): Promise<AstriaTune> 
       preset: "flux-lora-portrait",
       base_tune_id: FLUX_BASE_TUNE_ID,
       image_urls: imageUrls,
-      callback: webhookUrl,
-      steps: null, // let portrait preset auto-calculate
+      steps: null,
+      ...(webhookUrl ? { callback: webhookUrl } : {}),
     },
   };
 

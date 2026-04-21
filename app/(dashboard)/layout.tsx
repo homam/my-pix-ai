@@ -65,7 +65,7 @@ export default async function DashboardLayout({
                 {balance} credits
               </span>
             </div>
-            <span className="text-xs text-purple-400">Buy more</span>
+            <span className="text-xs text-purple-400">Get more</span>
           </Link>
 
           {/* User */}

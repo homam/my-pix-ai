@@ -5,6 +5,8 @@ import { useDropzone } from "react-dropzone";
 import { useRouter } from "next/navigation";
 import { Upload, X, Loader2, CheckCircle } from "lucide-react";
 import { CREDIT_COSTS } from "@/types";
+import { createClient } from "@/lib/supabase/client";
+import { STORAGE_BUCKET } from "@/lib/storage";
 
 const MIN_PHOTOS = 10;
 const MAX_PHOTOS = 30;
@@ -74,7 +76,8 @@ export function NewModelForm({ creditBalance }: { creditBalance: number }) {
       if (!modelRes.ok) throw new Error("Failed to create model record");
       const { model } = await modelRes.json();
 
-      // 2. Get presigned upload URLs and upload directly to R2
+      // 2. Upload each photo directly to Supabase Storage via signed upload URL
+      const supabase = createClient();
       const publicUrls: string[] = [];
       for (const f of files) {
         const upRes = await fetch("/api/upload", {
@@ -87,13 +90,14 @@ export function NewModelForm({ creditBalance }: { creditBalance: number }) {
           }),
         });
         if (!upRes.ok) throw new Error("Failed to get upload URL");
-        const { uploadUrl, publicUrl } = await upRes.json();
+        const { path, token, publicUrl } = await upRes.json();
 
-        await fetch(uploadUrl, {
-          method: "PUT",
-          body: f.file,
-          headers: { "Content-Type": f.file.type },
-        });
+        const { error: upErr } = await supabase.storage
+          .from(STORAGE_BUCKET)
+          .uploadToSignedUrl(path, token, f.file, {
+            contentType: f.file.type,
+          });
+        if (upErr) throw new Error(`Upload failed: ${upErr.message}`);
 
         publicUrls.push(publicUrl);
       }

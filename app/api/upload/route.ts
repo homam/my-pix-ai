@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { getPresignedUploadUrl } from "@/lib/r2";
+import { createSignedUpload } from "@/lib/storage";
 import { z } from "zod";
 import crypto from "crypto";
 
@@ -26,7 +26,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid request" }, { status: 400 });
   }
 
-  const { filename, contentType, modelId } = parsed.data;
+  const { filename, modelId } = parsed.data;
 
   // Verify this model belongs to the user
   const { data: model } = await supabase
@@ -41,10 +41,21 @@ export async function POST(req: NextRequest) {
   }
 
   const ext = filename.split(".").pop() ?? "jpg";
-  const key = `uploads/${user.id}/${modelId}/${crypto.randomUUID()}.${ext}`;
+  const path = `${user.id}/${modelId}/${crypto.randomUUID()}.${ext}`;
 
-  const uploadUrl = await getPresignedUploadUrl(key, contentType);
-  const publicUrl = `${process.env.R2_PUBLIC_URL}/${key}`;
-
-  return NextResponse.json({ uploadUrl, publicUrl, key });
+  try {
+    const upload = await createSignedUpload(supabase, path);
+    return NextResponse.json({
+      signedUrl: upload.signedUrl,
+      token: upload.token,
+      path: upload.path,
+      publicUrl: upload.publicUrl,
+    });
+  } catch (err) {
+    console.error("Upload URL creation failed:", err);
+    return NextResponse.json(
+      { error: "Failed to create upload URL" },
+      { status: 500 }
+    );
+  }
 }

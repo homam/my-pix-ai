@@ -182,7 +182,7 @@ language plpgsql security definer
 as $$
 begin
   insert into public.user_credits (user_id, balance)
-    values (new.id, 20);  -- 20 free credits = 1 free model training
+    values (new.id, 1000);  -- generous dev-mode starting balance
   return new;
 end;
 $$;
@@ -190,3 +190,34 @@ $$;
 create trigger on_auth_user_created
   after insert on auth.users
   for each row execute procedure public.handle_new_user();
+
+-- ============================================================
+-- Storage bucket for user photo uploads
+-- Make it public so Astria can fetch the training images.
+-- ============================================================
+insert into storage.buckets (id, name, public)
+  values ('user-uploads', 'user-uploads', true)
+  on conflict (id) do nothing;
+
+-- Allow authenticated users to upload to their own folder:  {user_id}/...
+create policy "Users can upload to their own folder"
+  on storage.objects for insert
+  to authenticated
+  with check (
+    bucket_id = 'user-uploads'
+    and (storage.foldername(name))[1] = auth.uid()::text
+  );
+
+create policy "Users can read their own uploads"
+  on storage.objects for select
+  to authenticated
+  using (
+    bucket_id = 'user-uploads'
+    and (storage.foldername(name))[1] = auth.uid()::text
+  );
+
+-- Public read for the public bucket so Astria can download training images
+create policy "Public read for user-uploads bucket"
+  on storage.objects for select
+  to anon
+  using (bucket_id = 'user-uploads');
