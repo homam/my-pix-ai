@@ -1,33 +1,12 @@
-"use client";
-
 import Link from "next/link";
-import { Sparkles, Coins, Loader2 } from "lucide-react";
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { Sparkles } from "lucide-react";
+import { CREDIT_PACKS, CREDIT_COSTS } from "@/types";
+import { isStripeConfigured } from "@/lib/stripe";
+import { StripePacks } from "@/components/StripePacks";
+import { DevGrantButton } from "@/components/DevGrantButton";
 
 export default function PricingPage() {
-  const router = useRouter();
-  const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
-
-  async function grant() {
-    setLoading(true);
-    setMessage(null);
-    try {
-      const res = await fetch("/api/dev/grant-credits", { method: "POST" });
-      if (res.ok) {
-        const { granted } = await res.json();
-        setMessage(`+${granted} credits added to your account.`);
-        router.refresh();
-      } else if (res.status === 401) {
-        window.location.href = "/login";
-      } else {
-        setMessage("Grant endpoint disabled.");
-      }
-    } finally {
-      setLoading(false);
-    }
-  }
+  const stripeOn = isStripeConfigured();
 
   return (
     <div className="min-h-screen bg-[#0a0a0a]">
@@ -46,40 +25,60 @@ export default function PricingPage() {
         </div>
       </nav>
 
-      <div className="max-w-2xl mx-auto px-6 py-24 text-center">
-        <div className="inline-flex items-center gap-2 bg-yellow-500/10 border border-yellow-500/20 rounded-full px-4 py-1.5 text-sm text-yellow-300 mb-8">
-          <Coins className="w-4 h-4" />
-          Dev mode — no payments
+      {stripeOn ? (
+        <div className="max-w-5xl mx-auto px-6 py-24 text-center">
+          <h1 className="text-4xl md:text-5xl font-bold mb-4">
+            Simple credit pricing
+          </h1>
+          <p className="text-gray-400 text-lg mb-4">
+            Buy credits once. Use them whenever. No subscription required.
+          </p>
+          <div className="inline-flex items-center gap-4 text-sm text-gray-500 mb-16">
+            <span className="flex items-center gap-1">
+              <span className="w-2 h-2 bg-purple-400 rounded-full" />
+              {CREDIT_COSTS.TRAINING} credits to train a model (~10 min)
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="w-2 h-2 bg-pink-400 rounded-full" />
+              {CREDIT_COSTS.GENERATION} credit per generated photo
+            </span>
+          </div>
+
+          <StripePacks packs={CREDIT_PACKS} />
+
+          <p className="text-gray-600 text-sm mt-12">
+            Questions?{" "}
+            <a
+              href="mailto:hello@mypix.ai"
+              className="text-gray-400 hover:text-white"
+            >
+              hello@mypix.ai
+            </a>
+          </p>
         </div>
+      ) : (
+        <div className="max-w-2xl mx-auto px-6 py-24 text-center">
+          <div className="inline-flex items-center gap-2 bg-yellow-500/10 border border-yellow-500/20 rounded-full px-4 py-1.5 text-sm text-yellow-300 mb-8">
+            Dev mode — payments not configured
+          </div>
 
-        <h1 className="text-4xl md:text-5xl font-bold mb-4">Credits</h1>
-        <p className="text-gray-400 text-lg mb-10">
-          Stripe isn&apos;t wired up in this build. Click below to grant
-          yourself 500 test credits instantly.
-        </p>
+          <h1 className="text-4xl md:text-5xl font-bold mb-4">Credits</h1>
+          <p className="text-gray-400 text-lg mb-10">
+            Stripe isn&apos;t set up on this deployment. Grant yourself test
+            credits below, or set{" "}
+            <code className="text-gray-300">STRIPE_SECRET_KEY</code> and the
+            price IDs to enable checkout.
+          </p>
 
-        <button
-          onClick={grant}
-          disabled={loading}
-          className="inline-flex items-center gap-2 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white px-8 py-4 rounded-xl text-lg font-medium transition-colors"
-        >
-          {loading ? (
-            <Loader2 className="w-5 h-5 animate-spin" />
-          ) : (
-            <Coins className="w-5 h-5" />
-          )}
-          Grant me 500 credits
-        </button>
+          <DevGrantButton />
 
-        {message && (
-          <p className="mt-6 text-sm text-green-400">{message}</p>
-        )}
-
-        <p className="text-xs text-gray-600 mt-12">
-          New users start with 1000 free credits. Training a model costs 20
-          credits; generating an image costs 1.
-        </p>
-      </div>
+          <p className="text-xs text-gray-600 mt-12">
+            New users start with 1000 free credits. Training a model costs{" "}
+            {CREDIT_COSTS.TRAINING} credits; generating an image costs{" "}
+            {CREDIT_COSTS.GENERATION}.
+          </p>
+        </div>
+      )}
     </div>
   );
 }

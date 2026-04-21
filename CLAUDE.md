@@ -6,9 +6,11 @@ AI photo studio: users upload photos → fine-tune a FLUX.1 LoRA on their likene
 - **Framework**: Next.js 15 App Router + TypeScript
 - **Auth + DB + Storage**: Supabase (magic-link auth, Postgres with RLS, Storage for photo uploads)
 - **AI**: Astria.ai (FLUX.1 LoRA training + inference, ~$2.13/user)
+- **Payments (optional)**: Stripe — enabled when `STRIPE_SECRET_KEY` is set
+- **Email (optional)**: Resend — enabled when `RESEND_API_KEY` is set
 - **UI**: Tailwind CSS v4
 
-This build has **no Stripe, no R2, no Resend** — keeps local dev friction low. Credits are granted via a dev endpoint (`/pricing`). Email notifications are logged to server console. Astria webhook is optional; the UI polls for training status.
+Cloudflare R2 is **not** used — photo storage is Supabase Storage. Stripe and Resend are **env-gated**: they're wired into the code but silently no-op when their env vars are missing. So in local dev you only need Supabase + Astria; in production, add Stripe and Resend when you're ready.
 
 ---
 
@@ -41,6 +43,26 @@ npm run dev
 ```
 
 App is at [http://localhost:3000](http://localhost:3000). Sign up with any email → click magic link → you start with 1000 credits (training costs 20, generation costs 1 per image). Need more? Visit `/pricing` and click **Grant me 500 credits**.
+
+### Optional: enable Stripe checkout
+1. Create products + prices in Stripe dashboard (Starter/Pro/Ultra).
+2. Add to `.env.local`:
+   ```
+   STRIPE_SECRET_KEY=sk_test_...
+   STRIPE_WEBHOOK_SECRET=whsec_...
+   STRIPE_PRICE_STARTER=price_...
+   STRIPE_PRICE_PRO=price_...
+   STRIPE_PRICE_ULTRA=price_...
+   ```
+3. For local webhooks: `stripe listen --forward-to localhost:3000/api/webhooks/stripe`
+4. Restart dev server — `/pricing` will now show real pack cards with Stripe checkout.
+
+### Optional: enable Resend emails
+```
+RESEND_API_KEY=re_...
+RESEND_FROM_EMAIL=hello@yourdomain.com
+```
+Without these, emails on training-complete / training-failed are logged to the server console instead of sent.
 
 ---
 
