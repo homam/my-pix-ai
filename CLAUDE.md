@@ -23,7 +23,7 @@ Cloudflare R2 is **not** used — photo storage is Supabase Storage. Stripe and 
   - Project URL → `NEXT_PUBLIC_SUPABASE_URL`
   - anon/public key → `NEXT_PUBLIC_SUPABASE_ANON_KEY`
   - service_role key → `SUPABASE_SERVICE_ROLE_KEY`
-- In **Authentication → URL Configuration**, add `http://localhost:3000/auth/callback` to the list of allowed redirect URLs.
+- In **Authentication → URL Configuration**, add `http://localhost:4871/auth/callback` to the list of allowed redirect URLs.
 
 ### 2. Astria.ai API key
 - Sign up at [astria.ai](https://astria.ai) and create an API key.
@@ -42,7 +42,7 @@ npm install
 npm run dev
 ```
 
-App is at [http://localhost:3000](http://localhost:3000). Sign up with any email → click magic link → you start with 1000 credits (training costs 20, generation costs 1 per image). Need more? Visit `/pricing` and click **Grant me 500 credits**.
+App is at [http://localhost:4871](http://localhost:4871). Sign up with any email → click magic link → you start with 1000 credits (training costs 20, generation costs 1 per image). Need more? Visit `/pricing` and click **Grant me 500 credits**.
 
 ### Optional: enable Stripe checkout
 1. Create products + prices in Stripe dashboard (Starter/Pro/Ultra).
@@ -54,7 +54,7 @@ App is at [http://localhost:3000](http://localhost:3000). Sign up with any email
    STRIPE_PRICE_PRO=price_...
    STRIPE_PRICE_ULTRA=price_...
    ```
-3. For local webhooks: `stripe listen --forward-to localhost:3000/api/webhooks/stripe`
+3. For local webhooks: `stripe listen --forward-to localhost:4871/api/webhooks/stripe`
 4. Restart dev server — `/pricing` will now show real pack cards with Stripe checkout.
 
 ### Optional: enable Resend emails
