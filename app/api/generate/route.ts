@@ -18,7 +18,7 @@ const ASPECT_RATIOS = ["1:1", "4:5", "2:3", "3:2", "9:16", "16:9"] as const;
 
 const schema = z.object({
   modelId: z.string().uuid(),
-  prompt: z.string().min(3).max(500),
+  prompt: z.string().min(3).max(2000),
   numImages: z.number().int().min(1).max(8).default(4),
   realism: z.enum(REALISM_PRESETS).default("natural"),
   faceCorrect: z.boolean().default(false),

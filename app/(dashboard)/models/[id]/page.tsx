@@ -72,7 +72,10 @@ export default async function ModelPage({
           creditCost={CREDIT_COSTS.GENERATION}
         />
       ) : (model as Model).status === "training" ? (
-        <TrainingProgress modelId={(model as Model).id} />
+        <TrainingProgress
+          modelId={(model as Model).id}
+          startedAt={(model as Model).updated_at}
+        />
       ) : (model as Model).status === "failed" ? (
         <div className="space-y-6">
           <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-6">
