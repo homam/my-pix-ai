@@ -66,6 +66,12 @@ export function NewModelForm({ creditBalance }: { creditBalance: number }) {
     setError(null);
     setStep("submitting");
 
+    const clientReqId = Math.random().toString(36).slice(2, 10);
+    console.log("[new-model]", clientReqId, "submit_started", {
+      fileCount: files.length,
+      modelName: modelName.trim(),
+    });
+
     try {
       // 1. Create model record
       const modelRes = await fetch("/api/models", {
@@ -73,13 +79,25 @@ export function NewModelForm({ creditBalance }: { creditBalance: number }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: modelName.trim() }),
       });
-      if (!modelRes.ok) throw new Error("Failed to create model record");
-      const { model } = await modelRes.json();
+      const modelJson = await modelRes.json().catch(() => ({}));
+      console.log("[new-model]", clientReqId, "create_model_response", {
+        status: modelRes.status,
+        body: modelJson,
+      });
+      if (!modelRes.ok) {
+        throw new Error(
+          `Failed to create model record (${modelRes.status}): ${
+            modelJson.error ?? "unknown"
+          } [reqId: ${modelJson.reqId ?? "?"}]`
+        );
+      }
+      const { model } = modelJson;
 
       // 2. Upload each photo directly to Supabase Storage via signed upload URL
       const supabase = createClient();
       const publicUrls: string[] = [];
-      for (const f of files) {
+      for (let i = 0; i < files.length; i++) {
+        const f = files[i];
         const upRes = await fetch("/api/upload", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -89,20 +107,50 @@ export function NewModelForm({ creditBalance }: { creditBalance: number }) {
             modelId: model.id,
           }),
         });
-        if (!upRes.ok) throw new Error("Failed to get upload URL");
-        const { path, token, publicUrl } = await upRes.json();
+        const upJson = await upRes.json().catch(() => ({}));
+        console.log("[new-model]", clientReqId, "upload_url_response", {
+          index: i,
+          filename: f.file.name,
+          status: upRes.status,
+          body: upJson,
+        });
+        if (!upRes.ok) {
+          throw new Error(
+            `Failed to get upload URL for ${f.file.name} (${upRes.status}): ${
+              upJson.error ?? "unknown"
+            } [reqId: ${upJson.reqId ?? "?"}]`
+          );
+        }
+        const { path, token, publicUrl } = upJson;
 
         const { error: upErr } = await supabase.storage
           .from(STORAGE_BUCKET)
           .uploadToSignedUrl(path, token, f.file, {
             contentType: f.file.type,
           });
-        if (upErr) throw new Error(`Upload failed: ${upErr.message}`);
+        if (upErr) {
+          console.error("[new-model]", clientReqId, "upload_failed", {
+            index: i,
+            filename: f.file.name,
+            path,
+            error: upErr,
+          });
+          throw new Error(`Upload failed for ${f.file.name}: ${upErr.message}`);
+        }
+        console.log("[new-model]", clientReqId, "upload_success", {
+          index: i,
+          filename: f.file.name,
+          publicUrl,
+        });
 
         publicUrls.push(publicUrl);
       }
 
       // 3. Start training
+      console.log("[new-model]", clientReqId, "train_request_start", {
+        modelId: model.id,
+        imageCount: publicUrls.length,
+      });
       const trainRes = await fetch("/api/train", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -113,15 +161,26 @@ export function NewModelForm({ creditBalance }: { creditBalance: number }) {
         }),
       });
 
+      const trainJson = await trainRes.json().catch(() => ({}));
+      console.log("[new-model]", clientReqId, "train_response", {
+        status: trainRes.status,
+        body: trainJson,
+      });
+
       if (!trainRes.ok) {
-        const { error } = await trainRes.json();
-        throw new Error(error ?? "Training failed to start");
+        throw new Error(
+          `${trainJson.error ?? "Training failed to start"} [reqId: ${
+            trainJson.reqId ?? "?"
+          }]`
+        );
       }
 
       setStep("done");
       setTimeout(() => router.push(`/models/${model.id}`), 1500);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong");
+      console.error("[new-model]", clientReqId, "flow_failed", err);
+      const msg = err instanceof Error ? err.message : "Something went wrong";
+      setError(`${msg} (clientReqId: ${clientReqId})`);
       setStep("upload");
     }
   }
