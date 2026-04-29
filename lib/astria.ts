@@ -102,20 +102,71 @@ export interface GenerateParams {
   prompt: string;
   numImages?: number;
   webhookUrl?: string;
+  faceCorrect?: boolean;
+  superResolution?: boolean;
+  filmGrain?: boolean;
+  cfgScale?: number;
+  steps?: number;
+  // null/empty string disables the suffix entirely.
+  realismSuffix?: string | null;
+  // Astria accepts 0 .. 2^32-1. Omit for a server-randomized seed.
+  seed?: number;
+  // Astria FLUX accepts enum strings like "1:1", "4:5", "9:16", "16:9", "3:2", "2:3".
+  aspectRatio?: string;
 }
 
+const DEFAULT_REALISM_SUFFIX =
+  "unretouched candid photograph, visible skin pores and texture, " +
+  "individual beard hairs, natural skin imperfections, no beauty filter, " +
+  "documentary photography, shot on 35mm film";
+
+const envNum = (v: string | undefined, d: number) =>
+  v !== undefined && v !== "" && !Number.isNaN(Number(v)) ? Number(v) : d;
+const envBool = (v: string | undefined, d: boolean) =>
+  v === undefined ? d : v === "true";
+
 export async function generateImages(params: GenerateParams): Promise<AstriaPrompt> {
-  const { tuneId, prompt, numImages = 4, webhookUrl } = params;
+  const {
+    tuneId,
+    prompt,
+    numImages = 4,
+    webhookUrl,
+    faceCorrect = envBool(process.env.ASTRIA_FACE_CORRECT, false),
+    superResolution = envBool(process.env.ASTRIA_SUPER_RES, false),
+    filmGrain = envBool(process.env.ASTRIA_FILM_GRAIN, true),
+    cfgScale = envNum(process.env.ASTRIA_CFG_SCALE, 3),
+    steps = envNum(process.env.ASTRIA_STEPS, 40),
+    realismSuffix = process.env.ASTRIA_REALISM_SUFFIX ?? DEFAULT_REALISM_SUFFIX,
+    seed,
+    aspectRatio,
+  } = params;
 
   // Astria's FLUX LoRA trigger phrase (required — validated server-side)
-  const fullPrompt = `sks ohwx person ${prompt}`;
+  const triggered = `sks ohwx person ${prompt}`;
+  const suffix = realismSuffix && realismSuffix.length > 0 ? `, ${realismSuffix}` : "";
 
+  // Optional realism LoRA stack via Astria's inline syntax. Gate behind env var
+  // until a working FLUX realism LoRA ID is verified — bad IDs 422 the request.
+  const realismLora = process.env.ASTRIA_REALISM_LORA_ID;
+  const realismLoraWeight = envNum(process.env.ASTRIA_REALISM_LORA_WEIGHT, 0.5);
+  const loraTag = realismLora ? ` <lora:${realismLora}:${realismLoraWeight}>` : "";
+
+  const fullPrompt = `${triggered}${suffix}${loraTag}`;
+
+  // Note: FLUX on Astria does not support `negative_prompt` (422) or
+  // `prompt_strength`. Realism is controlled via `cfg_scale` + `film_grain`
+  // + the suffix above + (optionally) a stacked realism LoRA.
   const body: Record<string, unknown> = {
     prompt: {
       text: fullPrompt,
       num_images: numImages,
-      super_resolution: true,
-      face_correct: true,
+      super_resolution: superResolution,
+      face_correct: faceCorrect,
+      film_grain: filmGrain,
+      cfg_scale: cfgScale,
+      steps,
+      ...(seed !== undefined ? { seed } : {}),
+      ...(aspectRatio ? { aspect_ratio: aspectRatio } : {}),
     },
   };
 

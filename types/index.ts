@@ -18,6 +18,22 @@ export interface ModelImage {
   created_at: string;
 }
 
+export interface GenerationSettings {
+  // What we actually sent to Astria — the user's prompt plus any auto-prepended
+  // trigger phrase and realism suffix. Useful for "why does this look like this".
+  fullPrompt?: string;
+  realism?: "polished" | "natural" | "documentary";
+  aspectRatio?: "1:1" | "4:5" | "2:3" | "3:2" | "9:16" | "16:9";
+  filmGrain?: boolean;
+  faceCorrect?: boolean;
+  superResolution?: boolean;
+  variety?: boolean;
+  cfgScale?: number;
+  // Actual seed used (server-generated when the user didn't lock one).
+  // null when the seed wasn't tracked (legacy rows or fan-out batches).
+  seed?: number | null;
+}
+
 export interface GeneratedImage {
   id: string;
   model_id: string;
@@ -25,6 +41,9 @@ export interface GeneratedImage {
   prompt: string;
   url: string;
   astria_image_id: string | null;
+  astria_source_url: string | null;
+  astria_prompt_id: number | null;
+  settings: GenerationSettings | null;
   created_at: string;
 }
 

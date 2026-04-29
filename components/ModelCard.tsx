@@ -1,25 +1,37 @@
 import Link from "next/link";
 import { Model } from "@/types";
 import { ModelStatusBadge } from "./ModelStatusBadge";
+import { ModelThumbs } from "./ModelThumbs";
 import { Images } from "lucide-react";
 
-export function ModelCard({ model }: { model: Model }) {
+export function ModelCard({
+  model,
+  thumbnailUrls = [],
+}: {
+  model: Model;
+  thumbnailUrls?: string[];
+}) {
   return (
     <Link
       href={`/models/${model.id}`}
       className="group block bg-white/3 border border-white/8 rounded-2xl p-6 hover:border-purple-500/30 hover:bg-white/5 transition-all"
     >
-      {/* Cover image or placeholder */}
-      <div className="aspect-video bg-white/5 rounded-xl mb-4 overflow-hidden flex items-center justify-center">
+      <div className="mb-4">
         {model.cover_image_url ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={model.cover_image_url}
-            alt={model.name}
-            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-          />
+          <div className="aspect-video bg-white/5 rounded-xl overflow-hidden flex items-center justify-center">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={model.cover_image_url}
+              alt={model.name}
+              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+            />
+          </div>
+        ) : thumbnailUrls.length > 0 ? (
+          <ModelThumbs urls={thumbnailUrls} limit={5} size="sm" />
         ) : (
-          <Images className="w-8 h-8 text-gray-600" />
+          <div className="aspect-video bg-white/5 rounded-xl flex items-center justify-center">
+            <Images className="w-8 h-8 text-gray-600" />
+          </div>
         )}
       </div>
 

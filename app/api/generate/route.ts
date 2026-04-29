@@ -10,11 +10,51 @@ import { z } from "zod";
 // Generation takes ~15–40s; allow enough time when deployed to Vercel.
 export const maxDuration = 150;
 
+const REALISM_PRESETS = ["polished", "natural", "documentary"] as const;
+type RealismPreset = (typeof REALISM_PRESETS)[number];
+
+const SEED_MAX = 2 ** 32 - 1;
+const ASPECT_RATIOS = ["1:1", "4:5", "2:3", "3:2", "9:16", "16:9"] as const;
+
 const schema = z.object({
   modelId: z.string().uuid(),
   prompt: z.string().min(3).max(500),
   numImages: z.number().int().min(1).max(8).default(4),
+  realism: z.enum(REALISM_PRESETS).default("natural"),
+  faceCorrect: z.boolean().default(false),
+  superResolution: z.boolean().default(false),
+  filmGrain: z.boolean().default(true),
+  aspectRatio: z.enum(ASPECT_RATIOS).default("1:1"),
+  // null = server-randomized (default). Number = locked seed for reproducibility.
+  seed: z.number().int().min(0).max(SEED_MAX).nullable().optional(),
+  // When true and numImages > 1, fan out into N parallel single-image
+  // generations with far-apart random seeds — gives much more variety.
+  variety: z.boolean().default(false),
 });
+
+function randomSeed() {
+  return Math.floor(Math.random() * SEED_MAX);
+}
+
+const REALISM_SUFFIX_DOCUMENTARY =
+  "unretouched candid photograph, visible skin pores and texture, " +
+  "individual beard hairs, natural skin imperfections, no beauty filter, " +
+  "documentary photography, photojournalism";
+
+const REALISM_SUFFIX_NATURAL =
+  "natural skin texture, visible skin pores, no beauty filter, candid photograph";
+
+function presetParams(p: RealismPreset) {
+  switch (p) {
+    case "polished":
+      return { cfgScale: 5, realismSuffix: null as string | null };
+    case "documentary":
+      return { cfgScale: 1.5, realismSuffix: REALISM_SUFFIX_DOCUMENTARY };
+    case "natural":
+    default:
+      return { cfgScale: 3, realismSuffix: REALISM_SUFFIX_NATURAL };
+  }
+}
 
 export async function POST(req: NextRequest) {
   const log = makeLogger("api/generate");
@@ -61,11 +101,30 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const { modelId, prompt, numImages } = parsed.data;
+  const {
+    modelId,
+    prompt,
+    numImages,
+    realism,
+    faceCorrect,
+    superResolution,
+    filmGrain,
+    aspectRatio,
+    seed: seedInput,
+    variety,
+  } = parsed.data;
+  const preset = presetParams(realism);
   log.info("input_validated", {
     userId: user.id,
     modelId,
     numImages,
+    realism,
+    faceCorrect,
+    superResolution,
+    filmGrain,
+    aspectRatio,
+    seed: seedInput ?? null,
+    variety,
     promptPreview: prompt.slice(0, 80),
   });
 
@@ -154,39 +213,80 @@ export async function POST(req: NextRequest) {
       modelId,
       tuneId: model.astria_tune_id,
       numImages,
+      variety,
     });
 
-    const submitted = await generateImages({
+    const baseParams = {
       tuneId: model.astria_tune_id,
       prompt,
-      numImages,
-    });
+      faceCorrect,
+      superResolution,
+      filmGrain,
+      cfgScale: preset.cfgScale,
+      realismSuffix: preset.realismSuffix,
+      aspectRatio,
+    };
+
+    // Two paths:
+    //  - variety on (numImages > 1): submit N parallel single-image prompts
+    //    with distinct random seeds → much more diverse compositions.
+    //  - else: one prompt with num_images=N. Faster, less variety per batch.
+    //    A locked `seed` is only meaningful in this single-call path.
+    const fanOut = variety && numImages > 1;
+    type Submission = { seed: number | null; numImages: number };
+    const submissionPlan: Submission[] = fanOut
+      ? Array.from({ length: numImages }, () => ({
+          seed: randomSeed(),
+          numImages: 1,
+        }))
+      : [{ seed: seedInput ?? null, numImages }];
+
+    const submitted = await Promise.all(
+      submissionPlan.map((s) =>
+        generateImages({
+          ...baseParams,
+          numImages: s.numImages,
+          ...(s.seed != null ? { seed: s.seed } : {}),
+        })
+      )
+    );
 
     log.info("astria_generate_submitted", {
       userId: user.id,
       modelId,
       tuneId: model.astria_tune_id,
-      astriaPromptId: submitted.id,
+      astriaPromptIds: submitted.map((s) => s.id),
+      fanOut,
     });
 
-    // Astria renders asynchronously; poll until the images array is populated.
-    const astriaPrompt = await waitForPrompt(
-      model.astria_tune_id,
-      submitted.id
+    const completed = await Promise.all(
+      submitted.map((s) => waitForPrompt(model.astria_tune_id, s.id))
     );
+
+    // Pair each image with the prompt it came from + the seed we sent so we
+    // can attribute rows correctly when fan-out submitted multiple prompts,
+    // and surface the seed in settings for "remix this image" UX.
+    const imagePromptPairs = completed.flatMap((p, planIdx) =>
+      (p.images ?? []).map((url) => ({
+        url,
+        astriaPromptId: p.id,
+        seed: submissionPlan[planIdx].seed,
+      }))
+    );
+    const allImages = imagePromptPairs.map((pair) => pair.url);
 
     log.info("astria_prompt_ready", {
       userId: user.id,
       modelId,
-      astriaPromptId: astriaPrompt.id,
-      imageCount: astriaPrompt.images?.length ?? 0,
+      astriaPromptIds: completed.map((p) => p.id),
+      imageCount: allImages.length,
     });
 
-    if (!astriaPrompt.images?.length) {
+    if (allImages.length === 0) {
       log.error("astria_prompt_no_images", {
         userId: user.id,
         modelId,
-        astriaPromptId: astriaPrompt.id,
+        astriaPromptIds: completed.map((p) => p.id),
       });
       await refund("astria returned no images");
       return NextResponse.json(
@@ -204,7 +304,7 @@ export async function POST(req: NextRequest) {
     // Astria URL longevity. If mirroring fails for one image, fall back
     // to the Astria URL for that one — don't lose the whole generation.
     const mirrored = await Promise.all(
-      astriaPrompt.images.map(async (sourceUrl, idx) => {
+      allImages.map(async (sourceUrl, idx) => {
         try {
           const { publicUrl } = await mirrorImageToStorage(
             serviceClient,
@@ -226,15 +326,40 @@ export async function POST(req: NextRequest) {
       })
     );
 
-    const imageRows = mirrored.map(({ url, sourceUrl }) => ({
-      model_id: modelId,
-      user_id: user.id,
-      prompt,
-      url,
-      astria_source_url: sourceUrl,
-      astria_prompt_id: astriaPrompt.id,
-      astria_image_id: String(astriaPrompt.id),
-    }));
+    // Mirror lib/astria.ts's prompt assembly so we can persist the exact text
+    // that was sent (trigger phrase + user prompt + realism suffix). Avoid
+    // exporting from the Astria client to keep that module focused.
+    const triggered = `sks ohwx person ${prompt}`;
+    const suffix =
+      preset.realismSuffix && preset.realismSuffix.length > 0
+        ? `, ${preset.realismSuffix}`
+        : "";
+    const fullPrompt = `${triggered}${suffix}`;
+
+    const imageRows = mirrored.map(({ url, sourceUrl }, idx) => {
+      const pair = imagePromptPairs[idx];
+      const settings = {
+        fullPrompt,
+        realism,
+        aspectRatio,
+        filmGrain,
+        faceCorrect,
+        superResolution,
+        variety,
+        cfgScale: preset.cfgScale,
+        seed: pair?.seed ?? null,
+      };
+      return {
+        model_id: modelId,
+        user_id: user.id,
+        prompt,
+        url,
+        astria_source_url: sourceUrl,
+        astria_prompt_id: pair?.astriaPromptId,
+        astria_image_id: String(pair?.astriaPromptId),
+        settings,
+      };
+    });
 
     const { data: inserted, error: insertErr } = await serviceClient
       .from("generated_images")
@@ -245,7 +370,7 @@ export async function POST(req: NextRequest) {
       log.error("generated_images_insert_failed", {
         userId: user.id,
         modelId,
-        astriaPromptId: astriaPrompt.id,
+        astriaPromptIds: completed.map((p) => p.id),
         rowCount: imageRows.length,
         pgCode: insertErr.code,
         pgMessage: insertErr.message,
@@ -258,7 +383,7 @@ export async function POST(req: NextRequest) {
         {
           error: `Failed to save images: ${insertErr.message}`,
           code: insertErr.code,
-          astriaPromptId: astriaPrompt.id,
+          astriaPromptIds: completed.map((p) => p.id),
           reqId: log.reqId,
         },
         { status: 500 }
@@ -268,7 +393,7 @@ export async function POST(req: NextRequest) {
     log.info("generation_complete", {
       userId: user.id,
       modelId,
-      astriaPromptId: astriaPrompt.id,
+      astriaPromptIds: completed.map((p) => p.id),
       insertedCount: inserted?.length ?? 0,
     });
 

@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { Plus, Sparkles } from "lucide-react";
 import { Model } from "@/types";
 import { ModelCard } from "@/components/ModelCard";
+import { listModelImages } from "@/lib/storage";
 
 export default async function DashboardPage({
   searchParams,
@@ -21,6 +22,15 @@ export default async function DashboardPage({
     .select("*")
     .eq("user_id", user.id)
     .order("created_at", { ascending: false });
+
+  const modelList = (models as Model[]) ?? [];
+  const thumbsByModel = Object.fromEntries(
+    await Promise.all(
+      modelList
+        .filter((m) => !m.cover_image_url)
+        .map(async (m) => [m.id, await listModelImages(supabase, user.id, m.id)] as const)
+    )
+  );
 
   const params = await searchParams;
   const paymentSuccess = params.payment === "success";
@@ -49,7 +59,7 @@ export default async function DashboardPage({
         </Link>
       </div>
 
-      {!models || models.length === 0 ? (
+      {modelList.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-24 text-center">
           <div className="w-16 h-16 bg-purple-500/10 rounded-2xl flex items-center justify-center mb-4">
             <Sparkles className="w-8 h-8 text-purple-400" />
@@ -69,8 +79,12 @@ export default async function DashboardPage({
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {(models as Model[]).map((model) => (
-            <ModelCard key={model.id} model={model} />
+          {modelList.map((model) => (
+            <ModelCard
+              key={model.id}
+              model={model}
+              thumbnailUrls={thumbsByModel[model.id] ?? []}
+            />
           ))}
         </div>
       )}
