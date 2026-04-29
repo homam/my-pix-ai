@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Sparkles, Loader2, Download, Coins, RefreshCw, ChevronDown, Dice5, Info, X } from "lucide-react";
+import { Sparkles, Loader2, Download, Coins, RefreshCw, ChevronDown, Dice5, Info, X, Share2, Check, Copy } from "lucide-react";
 import { Model, GeneratedImage } from "@/types";
 
 type RealismPreset = "polished" | "natural" | "documentary";
@@ -82,6 +82,50 @@ export function GenerateSection({
   const [generating, setGenerating] = useState(false);
   const [images, setImages] = useState<GeneratedImage[]>(initialImages);
   const [detailImage, setDetailImage] = useState<GeneratedImage | null>(null);
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [sharing, setSharing] = useState(false);
+  const [shareUrl, setShareUrl] = useState<string | null>(null);
+  const [shareError, setShareError] = useState<string | null>(null);
+
+  function toggleSelected(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function exitSelectMode() {
+    setSelectMode(false);
+    setSelectedIds(new Set());
+  }
+
+  async function createShare(imageIds: string[], promptText: string) {
+    setSharing(true);
+    setShareError(null);
+    setShareUrl(null);
+    try {
+      const res = await fetch("/api/shares", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ imageIds, prompt: promptText }),
+      });
+      if (!res.ok) {
+        const { error } = await res.json();
+        throw new Error(error ?? "Failed to create share");
+      }
+      const { url } = await res.json();
+      setShareUrl(url);
+      setDetailImage(null);
+      exitSelectMode();
+    } catch (err) {
+      setShareError(err instanceof Error ? err.message : "Failed to create share");
+    } finally {
+      setSharing(false);
+    }
+  }
 
   function applySettings(img: GeneratedImage) {
     setPrompt(img.prompt);
@@ -462,15 +506,67 @@ export function GenerateSection({
       {/* Generated images grid */}
       {images.length > 0 && (
         <div>
-          <h2 className="font-semibold mb-4">
-            Generated photos ({images.length})
-          </h2>
+          <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">
+            <h2 className="font-semibold">
+              Generated photos ({images.length})
+            </h2>
+            <div className="flex items-center gap-2">
+              {selectMode ? (
+                <>
+                  <span className="text-xs text-gray-400">
+                    {selectedIds.size} selected
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const ids = Array.from(selectedIds);
+                      const first = images.find((i) => i.id === ids[0]);
+                      createShare(ids, first?.prompt ?? "");
+                    }}
+                    disabled={selectedIds.size === 0 || sharing}
+                    className="inline-flex items-center gap-1.5 bg-purple-600 hover:bg-purple-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm px-3 py-1.5 rounded-lg transition-colors"
+                  >
+                    {sharing ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Share2 className="w-3.5 h-3.5" />
+                    )}
+                    Share {selectedIds.size > 0 ? selectedIds.size : ""}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={exitSelectMode}
+                    className="text-xs text-gray-400 hover:text-white px-2 py-1.5 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setSelectMode(true)}
+                  className="inline-flex items-center gap-1.5 text-xs text-gray-300 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg px-3 py-1.5 transition-colors"
+                >
+                  <Check className="w-3.5 h-3.5" />
+                  Select to share
+                </button>
+              )}
+            </div>
+          </div>
+          {shareError && (
+            <p className="text-red-400 text-sm bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-2 mb-4">
+              {shareError}
+            </p>
+          )}
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
             {images.map((img) => (
               <GeneratedImageCard
                 key={img.id}
                 image={img}
                 onShowDetails={() => setDetailImage(img)}
+                selectMode={selectMode}
+                selected={selectedIds.has(img.id)}
+                onToggleSelect={() => toggleSelected(img.id)}
               />
             ))}
           </div>
@@ -502,7 +598,13 @@ export function GenerateSection({
           image={detailImage}
           onClose={() => setDetailImage(null)}
           onRemix={() => applySettings(detailImage)}
+          onShare={() => createShare([detailImage.id], detailImage.prompt)}
+          sharing={sharing}
         />
+      )}
+
+      {shareUrl && (
+        <ShareResultModal url={shareUrl} onClose={() => setShareUrl(null)} />
       )}
     </div>
   );
@@ -511,42 +613,66 @@ export function GenerateSection({
 function GeneratedImageCard({
   image,
   onShowDetails,
+  selectMode,
+  selected,
+  onToggleSelect,
 }: {
   image: GeneratedImage;
   onShowDetails: () => void;
+  selectMode: boolean;
+  selected: boolean;
+  onToggleSelect: () => void;
 }) {
   return (
-    <div className="group relative aspect-square rounded-xl overflow-hidden bg-gray-900">
+    <div
+      onClick={selectMode ? onToggleSelect : undefined}
+      className={`group relative aspect-square rounded-xl overflow-hidden bg-gray-900 ${
+        selectMode ? "cursor-pointer" : ""
+      } ${selected ? "ring-2 ring-purple-500" : ""}`}
+    >
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         src={image.url}
         alt={image.prompt}
         className="w-full h-full object-cover"
       />
-      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors flex items-end p-3 opacity-0 group-hover:opacity-100">
-        <div className="flex items-center justify-between w-full gap-2">
-          <p className="text-xs text-white truncate flex-1">{image.prompt}</p>
-          <button
-            type="button"
-            onClick={onShowDetails}
-            title="View prompt and settings"
-            className="shrink-0 w-8 h-8 bg-white/20 hover:bg-white/30 backdrop-blur-sm rounded-lg flex items-center justify-center transition-colors"
-          >
-            <Info className="w-4 h-4 text-white" />
-          </button>
-          <a
-            href={image.url}
-            download
-            target="_blank"
-            rel="noreferrer"
-            title="Download"
-            className="shrink-0 w-8 h-8 bg-white/20 hover:bg-white/30 backdrop-blur-sm rounded-lg flex items-center justify-center transition-colors"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <Download className="w-4 h-4 text-white" />
-          </a>
+      {selectMode && (
+        <div
+          className={`absolute top-2 left-2 w-7 h-7 rounded-full flex items-center justify-center transition-colors ${
+            selected
+              ? "bg-purple-600 text-white"
+              : "bg-black/50 backdrop-blur-sm border border-white/30 text-transparent"
+          }`}
+        >
+          <Check className="w-4 h-4" />
         </div>
-      </div>
+      )}
+      {!selectMode && (
+        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors flex items-end p-3 opacity-0 group-hover:opacity-100">
+          <div className="flex items-center justify-between w-full gap-2">
+            <p className="text-xs text-white truncate flex-1">{image.prompt}</p>
+            <button
+              type="button"
+              onClick={onShowDetails}
+              title="View prompt and settings"
+              className="shrink-0 w-8 h-8 bg-white/20 hover:bg-white/30 backdrop-blur-sm rounded-lg flex items-center justify-center transition-colors"
+            >
+              <Info className="w-4 h-4 text-white" />
+            </button>
+            <a
+              href={image.url}
+              download
+              target="_blank"
+              rel="noreferrer"
+              title="Download"
+              className="shrink-0 w-8 h-8 bg-white/20 hover:bg-white/30 backdrop-blur-sm rounded-lg flex items-center justify-center transition-colors"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <Download className="w-4 h-4 text-white" />
+            </a>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -570,10 +696,14 @@ function ImageDetailModal({
   image,
   onClose,
   onRemix,
+  onShare,
+  sharing,
 }: {
   image: GeneratedImage;
   onClose: () => void;
   onRemix: () => void;
+  onShare: () => void;
+  sharing: boolean;
 }) {
   const s = image.settings;
   const created = new Date(image.created_at).toLocaleString();
@@ -671,7 +801,21 @@ function ImageDetailModal({
               className="flex-1 inline-flex items-center justify-center gap-2 bg-purple-600 hover:bg-purple-500 text-white px-4 py-2 rounded-xl text-sm font-medium transition-colors"
             >
               <Sparkles className="w-4 h-4" />
-              Remix with these settings
+              Remix
+            </button>
+            <button
+              type="button"
+              onClick={onShare}
+              disabled={sharing}
+              className="inline-flex items-center justify-center gap-2 bg-white/5 hover:bg-white/10 border border-white/10 disabled:opacity-50 px-4 py-2 rounded-xl text-sm font-medium transition-colors"
+              title="Create public share link"
+            >
+              {sharing ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Share2 className="w-4 h-4" />
+              )}
+              Share
             </button>
             <a
               href={image.url}
@@ -684,6 +828,106 @@ function ImageDetailModal({
               <Download className="w-4 h-4" />
             </a>
           </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ShareResultModal({
+  url,
+  onClose,
+}: {
+  url: string;
+  onClose: () => void;
+}) {
+  const [copied, setCopied] = useState(false);
+  const canNativeShare =
+    typeof navigator !== "undefined" && typeof navigator.share === "function";
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // No-op — user can still select the input contents.
+    }
+  }
+
+  async function nativeShare() {
+    try {
+      await navigator.share({ url, title: "MyPix AI photo" });
+    } catch {
+      // User cancelled — ignore.
+    }
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4"
+      onClick={onClose}
+    >
+      <div
+        className="bg-neutral-900 border border-white/10 rounded-2xl max-w-md w-full p-6"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-start justify-between mb-4">
+          <div>
+            <h3 className="font-semibold">Share link ready</h3>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Anyone with this link can view the photo and prompt.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="shrink-0 w-8 h-8 rounded-lg hover:bg-white/10 flex items-center justify-center"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="flex items-center gap-2 mb-4">
+          <input
+            readOnly
+            value={url}
+            onFocus={(e) => e.currentTarget.select()}
+            className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm font-mono text-gray-200 focus:outline-none focus:border-purple-500"
+          />
+          <button
+            type="button"
+            onClick={copy}
+            className="shrink-0 inline-flex items-center justify-center w-10 h-10 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 transition-colors"
+            title={copied ? "Copied" : "Copy link"}
+          >
+            {copied ? (
+              <Check className="w-4 h-4 text-green-400" />
+            ) : (
+              <Copy className="w-4 h-4" />
+            )}
+          </button>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <a
+            href={url}
+            target="_blank"
+            rel="noreferrer"
+            className="flex-1 inline-flex items-center justify-center gap-2 bg-white/5 hover:bg-white/10 border border-white/10 px-4 py-2 rounded-xl text-sm transition-colors"
+          >
+            Preview
+          </a>
+          {canNativeShare && (
+            <button
+              type="button"
+              onClick={nativeShare}
+              className="flex-1 inline-flex items-center justify-center gap-2 bg-purple-600 hover:bg-purple-500 text-white px-4 py-2 rounded-xl text-sm font-medium transition-colors"
+            >
+              <Share2 className="w-4 h-4" />
+              Share…
+            </button>
+          )}
         </div>
       </div>
     </div>
