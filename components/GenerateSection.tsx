@@ -2,8 +2,9 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Sparkles, Loader2, Download, Coins, RefreshCw, ChevronDown, Dice5, Info, X, Share2, Check, Copy } from "lucide-react";
+import { Sparkles, Loader2, Download, Coins, RefreshCw, ChevronDown, Dice5, Info, X, Share2, Check, Copy, Trash2, ImageDown } from "lucide-react";
 import { Model, GeneratedImage } from "@/types";
+import { PackPicker } from "./PackPicker";
 
 type RealismPreset = "polished" | "natural" | "documentary";
 type AspectRatio = "1:1" | "4:5" | "2:3" | "3:2" | "9:16" | "16:9";
@@ -215,6 +216,16 @@ export function GenerateSection({
 
   return (
     <div className="space-y-8">
+      {/* One-click prompt packs */}
+      <PackPicker
+        modelId={model.id}
+        balance={balance}
+        creditCost={creditCost}
+        busy={generating}
+        onImages={(imgs) => setImages((prev) => [...imgs, ...prev])}
+        onSpend={(credits) => setBalance((b) => b - credits)}
+      />
+
       {/* Generate form */}
       <div className="bg-white/3 border border-white/8 rounded-2xl p-6">
         <h2 className="font-semibold mb-4">Generate photos</h2>
@@ -596,10 +607,16 @@ export function GenerateSection({
       {detailImage && (
         <ImageDetailModal
           image={detailImage}
+          modelId={model.id}
           onClose={() => setDetailImage(null)}
           onRemix={() => applySettings(detailImage)}
           onShare={() => createShare([detailImage.id], detailImage.prompt)}
           sharing={sharing}
+          onDeleted={(id) => {
+            setImages((prev) => prev.filter((i) => i.id !== id));
+            setDetailImage(null);
+          }}
+          onCoverSet={() => router.refresh()}
         />
       )}
 
@@ -694,19 +711,66 @@ function SettingRow({
 
 function ImageDetailModal({
   image,
+  modelId,
   onClose,
   onRemix,
   onShare,
   sharing,
+  onDeleted,
+  onCoverSet,
 }: {
   image: GeneratedImage;
+  modelId: string;
   onClose: () => void;
   onRemix: () => void;
   onShare: () => void;
   sharing: boolean;
+  onDeleted: (id: string) => void;
+  onCoverSet: () => void;
 }) {
   const s = image.settings;
   const created = new Date(image.created_at).toLocaleString();
+  const [deleting, setDeleting] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [coverState, setCoverState] = useState<"idle" | "saving" | "done">("idle");
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  async function handleDelete() {
+    setDeleting(true);
+    setActionError(null);
+    try {
+      const res = await fetch(`/api/images/${image.id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const { error } = await res.json().catch(() => ({ error: "" }));
+        throw new Error(error || "Failed to delete");
+      }
+      onDeleted(image.id);
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Failed to delete");
+      setDeleting(false);
+    }
+  }
+
+  async function handleSetCover() {
+    setCoverState("saving");
+    setActionError(null);
+    try {
+      const res = await fetch(`/api/models/${modelId}/cover`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ imageId: image.id }),
+      });
+      if (!res.ok) {
+        const { error } = await res.json().catch(() => ({ error: "" }));
+        throw new Error(error || "Failed to set cover");
+      }
+      setCoverState("done");
+      onCoverSet();
+    } catch (err) {
+      setCoverState("idle");
+      setActionError(err instanceof Error ? err.message : "Failed to set cover");
+    }
+  }
   return (
     <div
       className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4"
@@ -794,39 +858,102 @@ function ImageDetailModal({
               )}
             </div>
           </div>
-          <div className="border-t border-white/10 p-4 flex items-center gap-2">
-            <button
-              type="button"
-              onClick={onRemix}
-              className="flex-1 inline-flex items-center justify-center gap-2 bg-purple-600 hover:bg-purple-500 text-white px-4 py-2 rounded-xl text-sm font-medium transition-colors"
-            >
-              <Sparkles className="w-4 h-4" />
-              Remix
-            </button>
-            <button
-              type="button"
-              onClick={onShare}
-              disabled={sharing}
-              className="inline-flex items-center justify-center gap-2 bg-white/5 hover:bg-white/10 border border-white/10 disabled:opacity-50 px-4 py-2 rounded-xl text-sm font-medium transition-colors"
-              title="Create public share link"
-            >
-              {sharing ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
+          <div className="border-t border-white/10 p-4 space-y-3">
+            {actionError && (
+              <p className="text-red-400 text-xs bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
+                {actionError}
+              </p>
+            )}
+            {/* Secondary actions */}
+            <div className="flex items-center justify-between gap-2">
+              <button
+                type="button"
+                onClick={handleSetCover}
+                disabled={coverState !== "idle"}
+                className="inline-flex items-center gap-1.5 text-xs text-gray-400 hover:text-white disabled:opacity-60 transition-colors"
+                title="Use as this model's cover image"
+              >
+                {coverState === "saving" ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : coverState === "done" ? (
+                  <Check className="w-3.5 h-3.5 text-green-400" />
+                ) : (
+                  <ImageDown className="w-3.5 h-3.5" />
+                )}
+                {coverState === "done" ? "Cover set" : "Set as cover"}
+              </button>
+              {confirmDelete ? (
+                <div className="flex items-center gap-2 text-xs">
+                  <span className="text-gray-400">Delete this photo?</span>
+                  <button
+                    type="button"
+                    onClick={handleDelete}
+                    disabled={deleting}
+                    className="inline-flex items-center gap-1 text-red-400 hover:text-red-300 disabled:opacity-60"
+                  >
+                    {deleting ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Trash2 className="w-3.5 h-3.5" />
+                    )}
+                    Delete
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setConfirmDelete(false)}
+                    disabled={deleting}
+                    className="text-gray-500 hover:text-gray-300"
+                  >
+                    Cancel
+                  </button>
+                </div>
               ) : (
-                <Share2 className="w-4 h-4" />
+                <button
+                  type="button"
+                  onClick={() => setConfirmDelete(true)}
+                  className="inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-red-400 transition-colors"
+                  title="Delete this photo"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  Delete
+                </button>
               )}
-              Share
-            </button>
-            <a
-              href={image.url}
-              download
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center justify-center w-10 h-10 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 transition-colors"
-              title="Download"
-            >
-              <Download className="w-4 h-4" />
-            </a>
+            </div>
+            {/* Primary actions */}
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={onRemix}
+                className="flex-1 inline-flex items-center justify-center gap-2 bg-purple-600 hover:bg-purple-500 text-white px-4 py-2 rounded-xl text-sm font-medium transition-colors"
+              >
+                <Sparkles className="w-4 h-4" />
+                Remix
+              </button>
+              <button
+                type="button"
+                onClick={onShare}
+                disabled={sharing}
+                className="inline-flex items-center justify-center gap-2 bg-white/5 hover:bg-white/10 border border-white/10 disabled:opacity-50 px-4 py-2 rounded-xl text-sm font-medium transition-colors"
+                title="Create public share link"
+              >
+                {sharing ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Share2 className="w-4 h-4" />
+                )}
+                Share
+              </button>
+              <a
+                href={image.url}
+                download
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center justify-center w-10 h-10 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 transition-colors"
+                title="Download"
+              >
+                <Download className="w-4 h-4" />
+              </a>
+            </div>
           </div>
         </div>
       </div>

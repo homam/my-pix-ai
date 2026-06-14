@@ -32,6 +32,9 @@ export interface GenerationSettings {
   // Actual seed used (server-generated when the user didn't lock one).
   // null when the seed wasn't tracked (legacy rows or fan-out batches).
   seed?: number | null;
+  // Set when the image came from a one-click prompt pack, so we can attribute
+  // generations to a pack. Absent for ad-hoc prompts.
+  packId?: string;
 }
 
 export interface GeneratedImage {
@@ -58,7 +61,7 @@ export interface CreditTransaction {
   id: string;
   user_id: string;
   amount: number;
-  type: "purchase" | "training" | "generation";
+  type: "purchase" | "training" | "generation" | "refund";
   stripe_session_id: string | null;
   description: string;
   created_at: string;

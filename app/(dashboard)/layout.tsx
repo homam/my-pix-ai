@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { Sparkles, LayoutDashboard, Plus, LogOut, Coins } from "lucide-react";
+import { Sparkles, LayoutDashboard, Plus, LogOut, Coins, User } from "lucide-react";
 import { getBalance } from "@/lib/credits";
 
 export default async function DashboardLayout({
@@ -51,6 +51,13 @@ export default async function DashboardLayout({
             <Plus className="w-4 h-4" />
             New Model
           </Link>
+          <Link
+            href="/account"
+            className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-gray-400 hover:text-white hover:bg-white/5 transition-colors"
+          >
+            <User className="w-4 h-4" />
+            Account
+          </Link>
         </nav>
 
         <div className="p-4 border-t border-white/5 space-y-3">
@@ -70,9 +77,11 @@ export default async function DashboardLayout({
 
           {/* User */}
           <div className="flex items-center justify-between px-3 py-2">
-            <div className="min-w-0">
-              <p className="text-xs text-gray-400 truncate">{user.email}</p>
-            </div>
+            <Link href="/account" className="min-w-0">
+              <p className="text-xs text-gray-400 truncate hover:text-white transition-colors">
+                {user.email}
+              </p>
+            </Link>
             <form action={signOut}>
               <button
                 type="submit"

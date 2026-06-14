@@ -5,6 +5,7 @@ import { GenerateSection } from "@/components/GenerateSection";
 import { ModelStatusBadge } from "@/components/ModelStatusBadge";
 import { TrainingProgress } from "@/components/TrainingProgress";
 import { RetryTrainingButton } from "@/components/RetryTrainingButton";
+import { DeleteModelButton } from "@/components/DeleteModelButton";
 import { ModelThumbs } from "@/components/ModelThumbs";
 import { getBalance } from "@/lib/credits";
 import { listModelImages } from "@/lib/storage";
@@ -62,6 +63,10 @@ export default async function ModelPage({
             })}
           </p>
         </div>
+        <DeleteModelButton
+          modelId={(model as Model).id}
+          modelName={(model as Model).name}
+        />
       </div>
 
       {(model as Model).status === "ready" ? (
