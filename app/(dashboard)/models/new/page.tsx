@@ -20,7 +20,7 @@ export default async function NewModelPage() {
       <div className="mb-8">
         <h1 className="text-2xl font-bold mb-2">Create a new AI model</h1>
         <p className="text-gray-400 text-sm">
-          Upload 15–25 photos of yourself. We&apos;ll train a FLUX.1 LoRA on
+          Upload 15–25 photos of yourself. We&apos;ll train a custom AI model on
           your likeness in about 10 minutes.
         </p>
       </div>
@@ -40,7 +40,10 @@ export default async function NewModelPage() {
           </Link>
         </div>
       ) : (
-        <NewModelForm creditBalance={balance} />
+        <NewModelForm
+          creditBalance={balance}
+          ultraAvailable={Boolean(process.env.FAL_KEY)}
+        />
       )}
     </div>
   );

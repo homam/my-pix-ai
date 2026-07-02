@@ -38,9 +38,20 @@ type Phase =
   | "starting-training"
   | "done";
 
-export function NewModelForm({ creditBalance }: { creditBalance: number }) {
+// User-facing engine tiers. We deliberately do not surface the underlying
+// vendor/model (Astria FLUX.1 vs fal FLUX.2) — just a quality ladder.
+type Engine = "astria" | "fal";
+
+export function NewModelForm({
+  creditBalance,
+  ultraAvailable = false,
+}: {
+  creditBalance: number;
+  ultraAvailable?: boolean;
+}) {
   const router = useRouter();
   const [modelName, setModelName] = useState("");
+  const [engine, setEngine] = useState<Engine>("astria");
   const [files, setFiles] = useState<UploadedFile[]>([]);
   const [phase, setPhase] = useState<Phase>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -196,7 +207,7 @@ export function NewModelForm({ creditBalance }: { creditBalance: number }) {
         const modelRes = await fetch("/api/models", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name: modelName.trim() }),
+          body: JSON.stringify({ name: modelName.trim(), provider: engine }),
         });
         const modelJson = await modelRes.json().catch(() => ({}));
         if (!modelRes.ok) {
@@ -315,9 +326,12 @@ export function NewModelForm({ creditBalance }: { creditBalance: number }) {
     percent = 5 + (uploaded / Math.max(total, 1)) * 85;
   } else if (phase === "starting-training") {
     stepNumber = 3;
-    stepCopy = "Starting training on Astria…";
+    stepCopy = "Starting training…";
     percent = 95;
   }
+
+  // Engine is locked once the model record exists (created on first submit).
+  const engineLocked = submitting || !!draftModelId;
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
@@ -354,6 +368,30 @@ export function NewModelForm({ creditBalance }: { creditBalance: number }) {
           className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition-colors disabled:opacity-50"
         />
       </div>
+
+      {/* Engine / quality tier — only shown when the Ultra engine is enabled */}
+      {ultraAvailable && (
+        <div>
+          <label className="block text-sm font-medium mb-2">Quality</label>
+          <div className="grid grid-cols-2 gap-3">
+            <EngineOption
+              selected={engine === "astria"}
+              disabled={engineLocked}
+              onSelect={() => setEngine("astria")}
+              title="Standard"
+              subtitle="Fast, high-quality results. Ready in minutes."
+            />
+            <EngineOption
+              selected={engine === "fal"}
+              disabled={engineLocked}
+              onSelect={() => setEngine("fal")}
+              title="Ultra"
+              subtitle="Our newest engine — maximum realism. Takes a bit longer."
+              badge="New"
+            />
+          </div>
+        </div>
+      )}
 
       {/* Dropzone */}
       <div>
@@ -449,6 +487,49 @@ export function NewModelForm({ creditBalance }: { creditBalance: number }) {
         </button>
       </div>
     </form>
+  );
+}
+
+function EngineOption({
+  selected,
+  disabled,
+  onSelect,
+  title,
+  subtitle,
+  badge,
+}: {
+  selected: boolean;
+  disabled: boolean;
+  onSelect: () => void;
+  title: string;
+  subtitle: string;
+  badge?: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      disabled={disabled}
+      aria-pressed={selected}
+      className={`text-left rounded-xl border p-4 transition-colors disabled:cursor-not-allowed ${
+        selected
+          ? "border-purple-500 bg-purple-500/10"
+          : "border-white/10 hover:border-purple-500/40 hover:bg-white/3"
+      } ${disabled && !selected ? "opacity-50" : ""}`}
+    >
+      <div className="flex items-center gap-2 mb-1">
+        <span className="text-sm font-medium text-white">{title}</span>
+        {badge && (
+          <span className="text-[10px] uppercase tracking-wide bg-purple-500/20 text-purple-200 rounded px-1.5 py-0.5">
+            {badge}
+          </span>
+        )}
+        {selected && (
+          <CheckCircle className="w-4 h-4 text-purple-300 ml-auto" />
+        )}
+      </div>
+      <p className="text-xs text-gray-400 leading-snug">{subtitle}</p>
+    </button>
   );
 }
 

@@ -1,10 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { createTune } from "@/lib/astria";
+import { falSubmitTraining, isFalConfigured } from "@/lib/fal";
+import { zipStore } from "@/lib/zip";
+import { STORAGE_BUCKET, getPublicUrl } from "@/lib/storage";
 import { deductCredits } from "@/lib/credits";
 import { CREDIT_COSTS } from "@/types";
 import { makeLogger, errInfo } from "@/lib/log";
 import { z } from "zod";
+
+// fal training zips + uploads all photos server-side before submitting, so give
+// it headroom beyond the quick Astria createTune call.
+export const maxDuration = 300;
 
 const schema = z.object({
   modelId: z.string().uuid(),
@@ -107,6 +114,133 @@ export async function POST(req: NextRequest) {
   }
 
   log.info("credits_deducted", { userId: user.id, modelId, balance });
+
+  // ------------------------------------------------------------------
+  // FLUX.2 (fal) training path. A model is engine-bound at creation, so we
+  // branch on model.provider. fal ingests a single zip of images: fetch each
+  // photo, pack a store-method zip, host it in our bucket, then submit. The
+  // refresh endpoint polls fal for completion (no webhook needed locally).
+  // Astria (FLUX.1) path continues unchanged below.
+  // ------------------------------------------------------------------
+  if (model.provider === "fal") {
+    const serviceClient = await createServiceClient();
+    const refundFal = async (reason: string) => {
+      const { error: refundErr } = await serviceClient.rpc("add_credits", {
+        p_user_id: user.id,
+        p_amount: CREDIT_COSTS.TRAINING,
+        p_stripe_session_id: null,
+        p_description: `Refund (${reason}): ${modelName}`,
+      });
+      if (refundErr) {
+        log.error("refund_failed", {
+          userId: user.id,
+          modelId,
+          reason,
+          pgMessage: refundErr.message,
+        });
+      } else {
+        log.info("credits_refunded", { userId: user.id, modelId, reason });
+      }
+    };
+
+    if (!isFalConfigured()) {
+      log.error("fal_key_missing", { userId: user.id, modelId });
+      await refundFal("no FAL_KEY");
+      return NextResponse.json(
+        { error: "Server misconfigured: FAL_KEY is not set", reqId: log.reqId },
+        { status: 500 }
+      );
+    }
+
+    try {
+      log.info("fal_zip_start", {
+        userId: user.id,
+        modelId,
+        imageCount: imageUrls.length,
+      });
+      const entries = await Promise.all(
+        imageUrls.map(async (url, i) => {
+          const res = await fetch(url);
+          if (!res.ok) {
+            throw new Error(`fetch training image ${i} failed: ${res.status}`);
+          }
+          const ct = res.headers.get("content-type") ?? "image/jpeg";
+          const ext = ct.includes("png")
+            ? "png"
+            : ct.includes("webp")
+              ? "webp"
+              : "jpg";
+          const data = Buffer.from(await res.arrayBuffer());
+          return { name: `${String(i + 1).padStart(3, "0")}.${ext}`, data };
+        })
+      );
+      const zip = zipStore(entries);
+
+      const zipPath = `${user.id}/${modelId}/training.zip`;
+      const { error: upErr } = await serviceClient.storage
+        .from(STORAGE_BUCKET)
+        .upload(zipPath, zip, {
+          contentType: "application/zip",
+          upsert: true,
+        });
+      if (upErr) throw new Error(`zip upload failed: ${upErr.message}`);
+      const zipUrl = getPublicUrl(serviceClient, zipPath);
+
+      log.info("fal_train_submit", {
+        userId: user.id,
+        modelId,
+        zipBytes: zip.length,
+      });
+      const { requestId } = await falSubmitTraining({ imageDataUrl: zipUrl });
+
+      const { error: updateErr } = await serviceClient
+        .from("models")
+        .update({
+          status: "training",
+          fal_request_id: requestId,
+          name: modelName,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", modelId);
+      if (updateErr) {
+        log.error("model_update_failed", {
+          userId: user.id,
+          modelId,
+          requestId,
+          pgMessage: updateErr.message,
+        });
+      }
+
+      const imageRows = imageUrls.map((url) => ({ model_id: modelId, url }));
+      const { error: imagesErr } = await serviceClient
+        .from("model_images")
+        .insert(imageRows);
+      if (imagesErr) {
+        log.error("model_images_insert_failed", {
+          userId: user.id,
+          modelId,
+          pgMessage: imagesErr.message,
+        });
+      }
+
+      log.info("fal_train_started", { userId: user.id, modelId, requestId });
+      return NextResponse.json({ requestId, balance, reqId: log.reqId });
+    } catch (err) {
+      const info = errInfo(err);
+      log.error("fal_train_failed", {
+        userId: user.id,
+        modelId,
+        modelName,
+        imageCount: imageUrls.length,
+        ...info,
+      });
+      await refundFal("fal training failed");
+      return NextResponse.json(
+        { error: `Failed to start training: ${info.message}`, reqId: log.reqId },
+        { status: 500 }
+      );
+    }
+  }
 
   const apiKeyPresent = Boolean(process.env.ASTRIA_API_KEY);
   const publicUrl = process.env.ASTRIA_WEBHOOK_PUBLIC_URL;

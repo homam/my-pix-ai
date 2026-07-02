@@ -179,7 +179,9 @@ export async function listModelImages(
 
   if (error || !data) return [];
 
+  // Only real photos — the model prefix can also hold non-image artifacts (e.g.
+  // the fal training zip), which must never be treated as training images.
   return data
-    .filter((f) => f.name && !f.name.endsWith("/"))
+    .filter((f) => f.name && /\.(jpe?g|png|webp)$/i.test(f.name))
     .map((f) => getPublicUrl(supabase, `${prefix}/${f.name}`));
 }
