@@ -137,7 +137,58 @@ Either way, polling remains as a fallback — webhooks can be lost, so you alway
 ---
 
 ## Astria notes
-- Base tune ID: `1504944` (FLUX.1 dev). Verify at astria.ai if model IDs change.
+- Base tune ID: `1504944` (FLUX.1 dev), overridable via `ASTRIA_BASE_TUNE_ID`.
+  Point it at a newer base (e.g. a FLUX.2 base) once Astria publishes its gallery
+  id — no code change. Verify at astria.ai if model IDs change.
 - Trigger token: `ohwx person` (auto-prepended to all generation prompts).
 - Portrait preset (`flux-lora-portrait`) — best for face identity preservation.
 - Webhook payload: `{ tune: AstriaTune }` with `trained_at` set on success.
+- Quality flags wired into generation (`lib/astria.ts`): `face_swap`,
+  `inpaint_faces`, `hires_fix`, `color_grading` (`Film Velvia` | `Film Portra` |
+  `Ektar`). `inpaint_faces`/`hires_fix` require `super_resolution`, which the
+  client auto-enables. Per-request overrides in `/api/generate`; env defaults
+  `ASTRIA_FACE_SWAP` / `ASTRIA_INPAINT_FACES` / `ASTRIA_HIRES_FIX` /
+  `ASTRIA_COLOR_GRADING`. `color_grading` defaults off in all presets — the enum
+  is unverified against a live generation and a wrong value 422s, so opt in
+  explicitly once confirmed (same caution as the realism-LoRA env gate).
+
+## Providers (two engines: Astria FLUX.1 + optional fal FLUX.2)
+A model is **bound to one engine at creation** (`models.provider`, chosen in the
+new-model form as **Standard** = Astria / **Ultra** = fal — the UI never names the
+vendor or model). Training and generation both use that engine; generation
+derives it from the model row, not from the client. The seam is `lib/providers.ts`.
+
+- **Astria** (`lib/astria.ts`) — default/primary. FLUX.1 dev, identity + face tooling.
+- **fal** (`lib/fal.ts`) — optional, env-gated on `FAL_KEY`, reaches **FLUX.2**.
+  Inert until `FAL_KEY` is set; the "Ultra" tier is hidden in the UI and
+  `getProvider("fal")` throws a clean 4xx otherwise (before any credits).
+
+**Identity is not portable** — an Astria LoRA can't render on fal or vice versa,
+so each engine trains its own LoRA. fal training ≈ $6.40/model vs Astria ≈ $1.50
+(the app still charges the same `TRAINING` credits; the $ gap is on the fal bill).
+
+**fal lifecycle** (mirrors the Astria polling flow):
+1. `POST /api/models` stores `provider`. `POST /api/train` (fal branch): fetches
+   all photos, builds a store-method zip (`lib/zip.ts`, no dependency), uploads
+   it to the `user-uploads` bucket, and calls `falSubmitTraining` → stores
+   `fal_request_id`, status `training`.
+2. `/api/models/[id]/refresh` polls `falTrainingStatus`; on COMPLETED it writes
+   `fal_lora_url` + status `ready`, on FAILED it refunds. No webhook needed locally.
+3. `/api/generate` renders on the model's engine via `falGenerateFlux2`.
+
+Requires migration `002_fal_provider.sql` (`provider`, `fal_lora_url`,
+`fal_request_id`). **Live-verified end-to-end (2026-07-02)**: a real 100-step
+training (zip → Supabase → fal → poll → LoRA) followed by a FLUX.2 generation
+produced a real image, exercising the actual `lib/fal.ts` + `lib/zip.ts`. Field
+names (`image_data_url`, `default_caption`, `output_lora_format`,
+`loras[]`, `diffusers_lora_file.url`) are confirmed. Two gotchas found & handled:
+fal's queue does **not** validate synchronously (bad input 200-enqueues then
+FAILs on poll — our code treats FAILED as failure), and a sub-path model
+(`fal-ai/flux-2/lora`) returns status/result URLs under the **parent** app path
+(`fal-ai/flux-2/requests/...`), so we use fal's returned URLs, not reconstructed
+ones. fal's queue wait can be several minutes before training even starts.
+
+**Not yet done:** several pre-existing UI strings still name the vendor
+("Sync from Astria", "Sent to Astria", landing-page "Powered by FLUX.1") — scrub
+these if the engine must stay fully hidden. A fal training webhook (vs polling)
+is optional, matching how Astria webhooks are optional locally.

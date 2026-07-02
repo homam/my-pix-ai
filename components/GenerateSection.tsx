@@ -551,7 +551,7 @@ export function GenerateSection({
       {/* Sync row */}
       <div className="flex items-center justify-between">
         <div className="text-xs text-gray-500">
-          {syncMessage ?? "Import past Astria generations into your library."}
+          {syncMessage ?? "Import your past generations into your library."}
         </div>
         <button
           onClick={handleSync}
@@ -563,7 +563,7 @@ export function GenerateSection({
           ) : (
             <RefreshCw className="w-3.5 h-3.5" />
           )}
-          {syncing ? "Syncing…" : "Sync from Astria"}
+          {syncing ? "Syncing…" : "Sync past photos"}
         </button>
       </div>
 
@@ -639,7 +639,7 @@ export function GenerateSection({
 
       {images.length === 0 && !generating && !syncing && (
         <div className="text-center py-12 text-gray-600 text-sm">
-          Your generated photos will appear here. Click <strong>Sync from Astria</strong> above if you&apos;ve generated anything previously.
+          Your generated photos will appear here. Click <strong>Sync past photos</strong> above if you&apos;ve generated anything previously.
         </div>
       )}
 
@@ -865,7 +865,7 @@ function ImageDetailModal({
             {s?.fullPrompt && s.fullPrompt !== image.prompt && (
               <div>
                 <div className="text-xs text-gray-500 mb-1">
-                  Sent to Astria (with trigger + realism suffix)
+                  Full prompt (with trigger + realism suffix)
                 </div>
                 <div className="text-xs bg-white/5 rounded-lg p-3 whitespace-pre-wrap font-mono text-gray-300">
                   {s.fullPrompt}

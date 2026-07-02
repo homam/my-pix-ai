@@ -71,7 +71,7 @@ export function StripePacks({ packs }: { packs: CreditPack[] }) {
                   `${pack.credits} credits total`,
                   `${models} AI model${models !== 1 ? "s" : ""}`,
                   `Up to ${photos + models * CREDIT_COSTS.TRAINING - CREDIT_COSTS.TRAINING} generated photos`,
-                  "FLUX.1 photorealistic quality",
+                  "Photorealistic quality",
                   "Credits never expire",
                 ].map((feature) => (
                   <li key={feature} className="flex items-start gap-2 text-sm">

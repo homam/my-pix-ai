@@ -54,7 +54,7 @@ export default function LandingPage() {
       <section className="max-w-7xl mx-auto px-6 pt-24 pb-20 text-center">
         <div className="inline-flex items-center gap-2 bg-purple-500/10 border border-purple-500/20 rounded-full px-4 py-1.5 text-sm text-purple-300 mb-8">
           <Zap className="w-3.5 h-3.5" />
-          Powered by FLUX.1 — state-of-the-art photorealism
+          Powered by state-of-the-art AI photorealism
         </div>
 
         <h1 className="text-5xl md:text-7xl font-bold tracking-tight mb-6 text-balance">
@@ -132,7 +132,7 @@ export default function LandingPage() {
                 icon: Zap,
                 step: "02",
                 title: "We train your model",
-                desc: "Our FLUX.1 fine-tuning pipeline trains a personal AI model that captures your exact likeness in ~10 minutes.",
+                desc: "Our fine-tuning pipeline trains a personal AI model that captures your exact likeness in ~10 minutes.",
               },
               {
                 icon: Sparkles,
@@ -214,7 +214,7 @@ export default function LandingPage() {
               {
                 icon: Star,
                 title: "State-of-the-art quality",
-                desc: "Built on FLUX.1 — the same model powering the best AI photo services in the world.",
+                desc: "Built on the same technology powering the best AI photo services in the world.",
               },
             ].map(({ icon: Icon, title, desc }) => (
               <div key={title} className="flex flex-col items-center">

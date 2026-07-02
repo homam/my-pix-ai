@@ -1,8 +1,11 @@
 import type { AstriaTune, AstriaPrompt } from "@/types";
 
 const API_BASE = "https://api.astria.ai";
-// Astria's FLUX.1 dev base model ID. Override via env to point at a newer
-// base (e.g. a FLUX 2 branch) without a code change.
+// Base model to fine-tune LoRAs on. Defaults to Astria's FLUX.1 dev
+// (gallery tune 1504944). Override with ASTRIA_BASE_TUNE_ID to point at a
+// newer base (e.g. a FLUX.2 base) the moment Astria publishes its gallery ID —
+// no code change or redeploy of logic required. Exported so studio routes
+// (edit/garments) can reference the same base id.
 export const FLUX_BASE_TUNE_ID =
   Number(process.env.ASTRIA_BASE_TUNE_ID) || 1504944;
 
@@ -108,6 +111,14 @@ export interface GenerateParams {
   faceCorrect?: boolean;
   superResolution?: boolean;
   filmGrain?: boolean;
+  // Quality flags. Astria requires super_resolution for inpaintFaces/hiresFix
+  // (422 otherwise) — this client auto-enables it when either is set.
+  faceSwap?: boolean; // use training images to swap face, boosts resemblance
+  inpaintFaces?: boolean; // extra facial enhancement, esp. long/full-body shots
+  hiresFix?: boolean; // adds detail during super-resolution pass
+  // Astria film-emulation enum: "Film Velvia" | "Film Portra" | "Ektar".
+  // null / empty string = no color grading.
+  colorGrading?: string | null;
   cfgScale?: number;
   steps?: number;
   // null/empty string disables the suffix entirely.
@@ -116,14 +127,6 @@ export interface GenerateParams {
   seed?: number;
   // Astria FLUX accepts enum strings like "1:1", "4:5", "9:16", "16:9", "3:2", "2:3".
   aspectRatio?: string;
-  // Re-injects training images at render time for stronger likeness.
-  faceSwap?: boolean;
-  // Regenerates faces at higher detail. Requires superResolution.
-  inpaintFaces?: boolean;
-  // Extra fine detail pass. Requires superResolution.
-  hiresFix?: boolean;
-  // Film emulation: "Film Velvia" | "Film Portra" | "Ektar".
-  colorGrading?: string;
 }
 
 const DEFAULT_REALISM_SUFFIX =
@@ -145,16 +148,20 @@ export async function generateImages(params: GenerateParams): Promise<AstriaProm
     faceCorrect = envBool(process.env.ASTRIA_FACE_CORRECT, false),
     superResolution = envBool(process.env.ASTRIA_SUPER_RES, false),
     filmGrain = envBool(process.env.ASTRIA_FILM_GRAIN, true),
+    faceSwap = envBool(process.env.ASTRIA_FACE_SWAP, false),
+    inpaintFaces = envBool(process.env.ASTRIA_INPAINT_FACES, false),
+    hiresFix = envBool(process.env.ASTRIA_HIRES_FIX, false),
+    colorGrading = process.env.ASTRIA_COLOR_GRADING || null,
     cfgScale = envNum(process.env.ASTRIA_CFG_SCALE, 3),
     steps = envNum(process.env.ASTRIA_STEPS, 40),
     realismSuffix = process.env.ASTRIA_REALISM_SUFFIX ?? DEFAULT_REALISM_SUFFIX,
     seed,
     aspectRatio,
-    faceSwap = false,
-    inpaintFaces = false,
-    hiresFix = false,
-    colorGrading,
   } = params;
+
+  // inpaint_faces and hires_fix are only valid when super_resolution is on;
+  // sending them without it is a 422. Auto-enable so callers can't foot-gun.
+  const effectiveSuperRes = superResolution || inpaintFaces || hiresFix;
 
   // Astria's FLUX LoRA trigger phrase (required — validated server-side)
   const triggered = `sks ohwx person ${prompt}`;
@@ -175,18 +182,18 @@ export async function generateImages(params: GenerateParams): Promise<AstriaProm
     prompt: {
       text: fullPrompt,
       num_images: numImages,
-      super_resolution: superResolution,
+      super_resolution: effectiveSuperRes,
       face_correct: faceCorrect,
       film_grain: filmGrain,
+      face_swap: faceSwap,
+      inpaint_faces: inpaintFaces,
+      hires_fix: hiresFix,
       cfg_scale: cfgScale,
       steps,
+      // Only send the enum when set — an empty/invalid value 422s.
+      ...(colorGrading ? { color_grading: colorGrading } : {}),
       ...(seed !== undefined ? { seed } : {}),
       ...(aspectRatio ? { aspect_ratio: aspectRatio } : {}),
-      ...(faceSwap ? { face_swap: true } : {}),
-      // Both require super_resolution server-side; guard so we never 422.
-      ...(inpaintFaces && superResolution ? { inpaint_faces: true } : {}),
-      ...(hiresFix && superResolution ? { hires_fix: true } : {}),
-      ...(colorGrading ? { color_grading: colorGrading } : {}),
     },
   };
 

@@ -5,7 +5,15 @@ export interface Model {
   user_id: string;
   name: string;
   status: ModelStatus;
+  // Engine this model is trained on / renders with, chosen at creation.
+  // Absent on legacy rows (treat as "astria"). See lib/providers.ts.
+  provider: "astria" | "fal";
   astria_tune_id: number | null;
+  // FLUX.2 LoRA weights URL when this model was trained on fal (provider "fal").
+  // null until fal training completes. See lib/fal.ts.
+  fal_lora_url: string | null;
+  // fal training request id, used to poll async training completion.
+  fal_request_id: string | null;
   cover_image_url: string | null;
   created_at: string;
   updated_at: string;
@@ -31,11 +39,18 @@ export interface GenerationSettings {
   // What we actually sent to Astria — the user's prompt plus any auto-prepended
   // trigger phrase and realism suffix. Useful for "why does this look like this".
   fullPrompt?: string;
+  // Which backend rendered this image. Absent on legacy rows (== "astria").
+  provider?: "astria" | "fal";
   realism?: "polished" | "natural" | "documentary";
   aspectRatio?: "1:1" | "4:5" | "2:3" | "3:2" | "9:16" | "16:9";
   filmGrain?: boolean;
   faceCorrect?: boolean;
   superResolution?: boolean;
+  faceSwap?: boolean;
+  inpaintFaces?: boolean;
+  hiresFix?: boolean;
+  // Astria film-emulation grade, or null when none was applied.
+  colorGrading?: string | null;
   variety?: boolean;
   cfgScale?: number;
   // Actual seed used (server-generated when the user didn't lock one).
@@ -44,10 +59,9 @@ export interface GenerationSettings {
   // Set when the image came from a one-click prompt pack, so we can attribute
   // generations to a pack. Absent for ad-hoc prompts.
   packId?: string;
-  // Realism upgrades (opt-in): face_swap re-injects training images at render
-  // time for stronger likeness; colorGrading applies film emulation.
+  // Studio's one-click likeness boost (maps to face_swap + inpaint_faces).
+  // colorGrading is declared above (string | null).
   boostLikeness?: boolean;
-  colorGrading?: "Film Velvia" | "Film Portra" | "Ektar";
   // Studio edit inputs (faceswap/inpaint/outpaint/restore/tryon kinds).
   sourceUrl?: string;
   maskUrl?: string;

@@ -1,11 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { isFalConfigured } from "@/lib/fal";
 import { makeLogger, errInfo } from "@/lib/log";
 import { z } from "zod";
 import crypto from "crypto";
 
 const schema = z.object({
   name: z.string().min(1).max(60),
+  // Engine to train this model on. Defaults to astria (FLUX.1). "fal" = FLUX.2,
+  // and requires FAL_KEY to be configured server-side.
+  provider: z.enum(["astria", "fal"]).default("astria"),
 });
 
 export async function POST(req: NextRequest) {
@@ -53,15 +57,27 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  const { name, provider } = parsed.data;
+
+  // Guard the fal engine at creation so a user never trains into a dead end.
+  if (provider === "fal" && !isFalConfigured()) {
+    log.warn("fal_not_configured", { userId: user.id });
+    return NextResponse.json(
+      { error: "The FLUX.2 engine is not available on this server", reqId: log.reqId },
+      { status: 400 }
+    );
+  }
+
   const modelId = crypto.randomUUID();
-  log.info("inserting_model", { userId: user.id, modelId, name: parsed.data.name });
+  log.info("inserting_model", { userId: user.id, modelId, name, provider });
 
   const { data: model, error } = await supabase
     .from("models")
     .insert({
       id: modelId,
       user_id: user.id,
-      name: parsed.data.name,
+      name,
+      provider,
       status: "pending",
     })
     .select()

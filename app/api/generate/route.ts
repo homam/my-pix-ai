@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
-import { generateImages, waitForPrompt } from "@/lib/astria";
+import { getProvider } from "@/lib/providers";
 import { deductCredits } from "@/lib/credits";
 import { mirrorImageToStorage } from "@/lib/storage";
 import { makeLogger, errInfo } from "@/lib/log";
@@ -15,6 +15,8 @@ type RealismPreset = (typeof REALISM_PRESETS)[number];
 
 const SEED_MAX = 2 ** 32 - 1;
 const ASPECT_RATIOS = ["1:1", "4:5", "2:3", "3:2", "9:16", "16:9"] as const;
+// Astria's film-emulation enum for color_grading.
+const COLOR_GRADINGS = ["Film Velvia", "Film Portra", "Ektar"] as const;
 
 const schema = z.object({
   modelId: z.string().uuid(),
@@ -24,17 +26,21 @@ const schema = z.object({
   faceCorrect: z.boolean().default(false),
   superResolution: z.boolean().default(false),
   filmGrain: z.boolean().default(true),
+  // Identity/quality flags (Astria). inpaintFaces/hiresFix imply super_resolution.
+  faceSwap: z.boolean().default(false),
+  inpaintFaces: z.boolean().default(false),
+  hiresFix: z.boolean().default(false),
+  // null = use the realism preset's default grade; a value overrides it.
+  colorGrading: z.enum(COLOR_GRADINGS).nullable().default(null),
   aspectRatio: z.enum(ASPECT_RATIOS).default("1:1"),
   // null = server-randomized (default). Number = locked seed for reproducibility.
   seed: z.number().int().min(0).max(SEED_MAX).nullable().optional(),
   // When true and numImages > 1, fan out into N parallel single-image
   // generations with far-apart random seeds — gives much more variety.
   variety: z.boolean().default(false),
-  // Re-injects training images at render time (Astria face_swap +
-  // inpaint_faces) for noticeably stronger likeness. Slower per image.
+  // Convenience toggle (studio UI): re-injects training images at render time,
+  // mapping to face_swap + inpaint_faces for stronger likeness. Slower per image.
   boostLikeness: z.boolean().default(false),
-  // Film emulation applied at render time.
-  colorGrading: z.enum(["Film Velvia", "Film Portra", "Ektar"]).nullable().optional(),
 });
 
 function randomSeed() {
@@ -49,15 +55,30 @@ const REALISM_SUFFIX_DOCUMENTARY =
 const REALISM_SUFFIX_NATURAL =
   "natural skin texture, visible skin pores, no beauty filter, candid photograph";
 
-function presetParams(p: RealismPreset) {
+function presetParams(p: RealismPreset): {
+  cfgScale: number;
+  realismSuffix: string | null;
+  colorGrading: string | null;
+} {
   switch (p) {
     case "polished":
-      return { cfgScale: 5, realismSuffix: null as string | null };
+      // color_grading is left null until the enum ("Film Portra" etc.) is
+      // verified against a live generation — a wrong value 422s the request.
+      // Opt in per-request or via ASTRIA_COLOR_GRADING once confirmed.
+      return { cfgScale: 5, realismSuffix: null, colorGrading: null };
     case "documentary":
-      return { cfgScale: 1.5, realismSuffix: REALISM_SUFFIX_DOCUMENTARY };
+      return {
+        cfgScale: 1.5,
+        realismSuffix: REALISM_SUFFIX_DOCUMENTARY,
+        colorGrading: null,
+      };
     case "natural":
     default:
-      return { cfgScale: 3, realismSuffix: REALISM_SUFFIX_NATURAL };
+      return {
+        cfgScale: 3,
+        realismSuffix: REALISM_SUFFIX_NATURAL,
+        colorGrading: null,
+      };
   }
 }
 
@@ -114,46 +135,96 @@ export async function POST(req: NextRequest) {
     faceCorrect,
     superResolution,
     filmGrain,
+    faceSwap,
+    inpaintFaces,
+    hiresFix,
+    colorGrading,
     aspectRatio,
     seed: seedInput,
     variety,
     boostLikeness,
-    colorGrading,
   } = parsed.data;
   const preset = presetParams(realism);
+  const effectiveColorGrading = colorGrading ?? preset.colorGrading;
+  // boostLikeness (studio's one-click) turns on both identity passes; the
+  // granular flags can also enable them individually. Polished additionally
+  // gets the hires-fix detail pass.
+  const effFaceSwap = faceSwap || boostLikeness;
+  const effInpaintFaces = inpaintFaces || boostLikeness;
+  const effHiresFix = hiresFix || realism === "polished";
+
+  // Verify model belongs to user and is ready. select("*") tolerates an
+  // un-migrated DB (provider / fal_lora_url just come back undefined → astria),
+  // so the default FLUX.1 path keeps working before migration 002 is applied.
+  const { data: modelRaw, error: modelErr } = await supabase
+    .from("models")
+    .select("*")
+    .eq("id", modelId)
+    .eq("user_id", user.id)
+    .eq("status", "ready")
+    .single();
+  const model = modelRaw as unknown as {
+    provider?: "astria" | "fal" | null;
+    astria_tune_id: number | null;
+    fal_lora_url?: string | null;
+  } | null;
+
+  // A model is bound to one engine at training time — render on that engine.
+  const provider: "astria" | "fal" = model?.provider === "fal" ? "fal" : "astria";
+
   log.info("input_validated", {
     userId: user.id,
     modelId,
+    provider,
     numImages,
     realism,
     faceCorrect,
     superResolution,
     filmGrain,
+    boostLikeness,
+    faceSwap: effFaceSwap,
+    inpaintFaces: effInpaintFaces,
+    hiresFix: effHiresFix,
+    colorGrading: effectiveColorGrading,
     aspectRatio,
     seed: seedInput ?? null,
     variety,
     promptPreview: prompt.slice(0, 80),
   });
 
-  // Verify model belongs to user and is ready
-  const { data: model, error: modelErr } = await supabase
-    .from("models")
-    .select("astria_tune_id")
-    .eq("id", modelId)
-    .eq("user_id", user.id)
-    .eq("status", "ready")
-    .single();
-
-  if (modelErr || !model?.astria_tune_id) {
+  // Each engine needs its own identity handle: Astria a tune id, fal a LoRA.
+  const identityMissing =
+    provider === "fal" ? !model?.fal_lora_url : !model?.astria_tune_id;
+  if (modelErr || !model || identityMissing) {
     log.warn("model_not_ready", {
       userId: user.id,
       modelId,
+      provider,
       pgCode: modelErr?.code,
       pgMessage: modelErr?.message,
     });
     return NextResponse.json(
-      { error: "Model not found or not ready", reqId: log.reqId },
+      {
+        error:
+          provider === "fal" && model && !model.fal_lora_url
+            ? "This model has no FLUX.2 version yet — training may still be running"
+            : "Model not found or not ready",
+        reqId: log.reqId,
+      },
       { status: 404 }
+    );
+  }
+
+  // Resolve the engine client before touching credits so a misconfigured engine
+  // (e.g. FAL_KEY removed after training) returns a clean 4xx and never charges.
+  let providerImpl;
+  try {
+    providerImpl = getProvider(provider);
+  } catch (err) {
+    log.warn("provider_unavailable", { userId: user.id, provider, ...errInfo(err) });
+    return NextResponse.json(
+      { error: errInfo(err).message || "Selected engine is unavailable", reqId: log.reqId },
+      { status: 400 }
     );
   }
 
@@ -215,35 +286,25 @@ export async function POST(req: NextRequest) {
     }
   };
 
+  const providerModel = {
+    astriaTuneId: model.astria_tune_id ?? null,
+    falLoraUrl: model.fal_lora_url ?? null,
+  };
+
   try {
-    log.info("astria_generate_start", {
+    log.info("generate_start", {
       userId: user.id,
       modelId,
+      provider,
       tuneId: model.astria_tune_id,
       numImages,
       variety,
     });
 
-    const baseParams = {
-      tuneId: model.astria_tune_id,
-      prompt,
-      faceCorrect,
-      superResolution,
-      filmGrain,
-      cfgScale: preset.cfgScale,
-      realismSuffix: preset.realismSuffix,
-      aspectRatio,
-      faceSwap: boostLikeness,
-      inpaintFaces: boostLikeness,
-      // Polished preset gets the extra detail pass when upscaling.
-      hiresFix: realism === "polished",
-      ...(colorGrading ? { colorGrading } : {}),
-    };
-
     // Two paths:
-    //  - variety on (numImages > 1): submit N parallel single-image prompts
+    //  - variety on (numImages > 1): submit N parallel single-image renders
     //    with distinct random seeds → much more diverse compositions.
-    //  - else: one prompt with num_images=N. Faster, less variety per batch.
+    //  - else: one render with num_images=N. Faster, less variety per batch.
     //    A locked `seed` is only meaningful in this single-call path.
     const fanOut = variety && numImages > 1;
     type Submission = { seed: number | null; numImages: number };
@@ -254,57 +315,56 @@ export async function POST(req: NextRequest) {
         }))
       : [{ seed: seedInput ?? null, numImages }];
 
-    const submitted = await Promise.all(
-      submissionPlan.map((s) =>
-        generateImages({
-          ...baseParams,
-          numImages: s.numImages,
-          ...(s.seed != null ? { seed: s.seed } : {}),
-        })
+    // Each render() submits and waits, returning normalized images with the
+    // provider's prompt/request id and the seed used, so fan-out attribution
+    // and "remix this image" UX work identically across backends.
+    const rendered = (
+      await Promise.all(
+        submissionPlan.map((s) =>
+          providerImpl.render(providerModel, {
+            prompt,
+            numImages: s.numImages,
+            seed: s.seed,
+            aspectRatio,
+            realismSuffix: preset.realismSuffix,
+            cfgScale: preset.cfgScale,
+            filmGrain,
+            faceCorrect,
+            superResolution,
+            faceSwap: effFaceSwap,
+            inpaintFaces: effInpaintFaces,
+            hiresFix: effHiresFix,
+            colorGrading: effectiveColorGrading,
+          })
+        )
       )
-    );
+    ).flat();
 
-    log.info("astria_generate_submitted", {
+    const providerPromptIds = [
+      ...new Set(rendered.map((r) => r.providerPromptId)),
+    ];
+    const allImages = rendered.map((r) => r.sourceUrl);
+
+    log.info("generate_rendered", {
       userId: user.id,
       modelId,
-      tuneId: model.astria_tune_id,
-      astriaPromptIds: submitted.map((s) => s.id),
+      provider,
+      providerPromptIds,
+      imageCount: allImages.length,
       fanOut,
     });
 
-    const completed = await Promise.all(
-      submitted.map((s) => waitForPrompt(model.astria_tune_id, s.id))
-    );
-
-    // Pair each image with the prompt it came from + the seed we sent so we
-    // can attribute rows correctly when fan-out submitted multiple prompts,
-    // and surface the seed in settings for "remix this image" UX.
-    const imagePromptPairs = completed.flatMap((p, planIdx) =>
-      (p.images ?? []).map((url) => ({
-        url,
-        astriaPromptId: p.id,
-        seed: submissionPlan[planIdx].seed,
-      }))
-    );
-    const allImages = imagePromptPairs.map((pair) => pair.url);
-
-    log.info("astria_prompt_ready", {
-      userId: user.id,
-      modelId,
-      astriaPromptIds: completed.map((p) => p.id),
-      imageCount: allImages.length,
-    });
-
     if (allImages.length === 0) {
-      log.error("astria_prompt_no_images", {
+      log.error("generate_no_images", {
         userId: user.id,
         modelId,
-        astriaPromptIds: completed.map((p) => p.id),
+        provider,
+        providerPromptIds,
       });
-      await refund("astria returned no images");
+      await refund("provider returned no images");
       return NextResponse.json(
         {
-          error: "Astria returned no images",
+          error: "Image provider returned no images",
           reqId: log.reqId,
         },
         { status: 502 }
@@ -339,10 +399,10 @@ export async function POST(req: NextRequest) {
       })
     );
 
-    // Mirror lib/astria.ts's prompt assembly so we can persist the exact text
-    // that was sent (trigger phrase + user prompt + realism suffix). Avoid
-    // exporting from the Astria client to keep that module focused.
-    const triggered = `sks ohwx person ${prompt}`;
+    // Reconstruct the text that was sent so we can persist it for debugging.
+    // Astria auto-prepends its trigger phrase; fal uses the raw prompt.
+    const triggered =
+      provider === "astria" ? `sks ohwx person ${prompt}` : prompt;
     const suffix =
       preset.realismSuffix && preset.realismSuffix.length > 0
         ? `, ${preset.realismSuffix}`
@@ -350,28 +410,36 @@ export async function POST(req: NextRequest) {
     const fullPrompt = `${triggered}${suffix}`;
 
     const imageRows = mirrored.map(({ url, sourceUrl }, idx) => {
-      const pair = imagePromptPairs[idx];
+      const r = rendered[idx];
       const settings = {
         fullPrompt,
+        provider,
         realism,
         aspectRatio,
         filmGrain,
         faceCorrect,
         superResolution,
+        faceSwap: effFaceSwap,
+        inpaintFaces: effInpaintFaces,
+        hiresFix: effHiresFix,
+        colorGrading: effectiveColorGrading,
         variety,
         boostLikeness,
-        ...(colorGrading ? { colorGrading } : {}),
         cfgScale: preset.cfgScale,
-        seed: pair?.seed ?? null,
+        seed: r?.seed ?? null,
       };
+      // astria_prompt_id is an integer column — only Astria has a numeric id;
+      // fal's request id lives in astria_image_id (text) with prompt_id null.
+      const numericPromptId =
+        provider === "astria" && r ? Number(r.providerPromptId) : null;
       return {
         model_id: modelId,
         user_id: user.id,
         prompt,
         url,
         astria_source_url: sourceUrl,
-        astria_prompt_id: pair?.astriaPromptId,
-        astria_image_id: String(pair?.astriaPromptId),
+        astria_prompt_id: numericPromptId,
+        astria_image_id: r?.providerPromptId ?? null,
         settings,
       };
     });
@@ -385,20 +453,20 @@ export async function POST(req: NextRequest) {
       log.error("generated_images_insert_failed", {
         userId: user.id,
         modelId,
-        astriaPromptIds: completed.map((p) => p.id),
+        providerPromptIds,
         rowCount: imageRows.length,
         pgCode: insertErr.code,
         pgMessage: insertErr.message,
         pgHint: insertErr.hint,
         pgDetails: insertErr.details,
       });
-      // Don't refund — Astria already produced images that the user could
+      // Don't refund — the provider already produced images that the user could
       // pull manually via the sync endpoint. Surface a clear error instead.
       return NextResponse.json(
         {
           error: `Failed to save images: ${insertErr.message}`,
           code: insertErr.code,
-          astriaPromptIds: completed.map((p) => p.id),
+          providerPromptIds,
           reqId: log.reqId,
         },
         { status: 500 }
@@ -408,7 +476,7 @@ export async function POST(req: NextRequest) {
     log.info("generation_complete", {
       userId: user.id,
       modelId,
-      astriaPromptIds: completed.map((p) => p.id),
+      providerPromptIds,
       insertedCount: inserted?.length ?? 0,
     });
 
