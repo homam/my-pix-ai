@@ -102,6 +102,14 @@ Either way, polling remains as a fallback — webhooks can be lost, so you alway
 1. **Create model**: Upload 15–25 photos → client gets a signed upload URL per file from `/api/upload` → uploads directly to Supabase Storage (`user-uploads` bucket) → `/api/train` deducts 20 credits and calls Astria to create a tune.
 2. **Training**: Astria trains FLUX.1 LoRA (~10 min). UI polls `/api/models/[id]/refresh` for status. On success, model status flips to `ready`.
 3. **Generate**: `/api/generate` calls Astria with the user's tune ID and a prompt (auto-prepended with `ohwx person` trigger token). Results are stored in `generated_images`.
+4. **Studio edits**: `/studio` hosts five tools, all going through `POST /api/edit` (discriminated by `mode`):
+   - **faceswap** — put a trained model's face into any uploaded photo (img2img at low denoising + `face_swap` + `inpaint_faces`)
+   - **inpaint** — background swap / object removal; the client paints a mask (`components/studio/MaskCanvas.tsx`), uploads it, Astria repaints the white area
+   - **outpaint** — uncrop via `--outpaint` prompt args at `denoising_strength=0`
+   - **restore** — restore/colorize old photos (img2img on the base tune, no trained model needed)
+   - **tryon** — virtual outfit try-on: garments are Astria faceid fine-tunes (`garment_tunes` table via `POST /api/garments`, 5 credits) combined with the user's LoRA via `<lora:...>` + `<faceid:...>` prompt tokens
+
+   Edits cost 1 credit/image (`GENERATION` type). Results land in `generated_images` with a `kind` column; `model_id` is nullable for model-free edits. Schema: `supabase/migrations/005_studio.sql`.
 
 ---
 
@@ -113,7 +121,10 @@ Either way, polling remains as a fallback — webhooks can be lost, so you alway
 ---
 
 ## Key files
-- `lib/astria.ts` — Astria API client (createTune, generateImages, getTune)
+- `lib/astria.ts` — Astria API client (createTune, generateImages, editImage, createGarmentTune, getTune)
+- `app/api/edit/route.ts` — all five studio edit modes
+- `components/studio/StudioTools.tsx` — studio UI (tool tabs, uploads, mask editor, garment manager)
+- `app/(dashboard)/photos/page.tsx` — "All photos" library across all models + studio edits (filter by `kind`)
 - `lib/storage.ts` — Supabase Storage signed upload URLs
 - `lib/credits.ts` — deductCredits / addCredits (wraps Supabase RPCs)
 - `app/api/webhooks/astria/route.ts` — training completion webhook (for when you set up ngrok / deploy)

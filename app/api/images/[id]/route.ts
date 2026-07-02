@@ -55,11 +55,14 @@ export async function DELETE(
   }
 
   // If this image was the model's cover, clear it so the card doesn't 404.
-  await svc
-    .from("models")
-    .update({ cover_image_url: null })
-    .eq("id", image.model_id)
-    .eq("cover_image_url", image.url);
+  // Studio edits can have no model (model_id null) — nothing to clear then.
+  if (image.model_id) {
+    await svc
+      .from("models")
+      .update({ cover_image_url: null })
+      .eq("id", image.model_id)
+      .eq("cover_image_url", image.url);
+  }
 
   const { error: delErr } = await svc
     .from("generated_images")

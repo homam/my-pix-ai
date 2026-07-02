@@ -1,7 +1,10 @@
 import type { AstriaTune, AstriaPrompt } from "@/types";
 
 const API_BASE = "https://api.astria.ai";
-const FLUX_BASE_TUNE_ID = 1504944; // Astria's FLUX.1 dev base model ID
+// Astria's FLUX.1 dev base model ID. Override via env to point at a newer
+// base (e.g. a FLUX 2 branch) without a code change.
+export const FLUX_BASE_TUNE_ID =
+  Number(process.env.ASTRIA_BASE_TUNE_ID) || 1504944;
 
 function headers() {
   return {
@@ -113,6 +116,14 @@ export interface GenerateParams {
   seed?: number;
   // Astria FLUX accepts enum strings like "1:1", "4:5", "9:16", "16:9", "3:2", "2:3".
   aspectRatio?: string;
+  // Re-injects training images at render time for stronger likeness.
+  faceSwap?: boolean;
+  // Regenerates faces at higher detail. Requires superResolution.
+  inpaintFaces?: boolean;
+  // Extra fine detail pass. Requires superResolution.
+  hiresFix?: boolean;
+  // Film emulation: "Film Velvia" | "Film Portra" | "Ektar".
+  colorGrading?: string;
 }
 
 const DEFAULT_REALISM_SUFFIX =
@@ -139,6 +150,10 @@ export async function generateImages(params: GenerateParams): Promise<AstriaProm
     realismSuffix = process.env.ASTRIA_REALISM_SUFFIX ?? DEFAULT_REALISM_SUFFIX,
     seed,
     aspectRatio,
+    faceSwap = false,
+    inpaintFaces = false,
+    hiresFix = false,
+    colorGrading,
   } = params;
 
   // Astria's FLUX LoRA trigger phrase (required — validated server-side)
@@ -167,6 +182,11 @@ export async function generateImages(params: GenerateParams): Promise<AstriaProm
       steps,
       ...(seed !== undefined ? { seed } : {}),
       ...(aspectRatio ? { aspect_ratio: aspectRatio } : {}),
+      ...(faceSwap ? { face_swap: true } : {}),
+      // Both require super_resolution server-side; guard so we never 422.
+      ...(inpaintFaces && superResolution ? { inpaint_faces: true } : {}),
+      ...(hiresFix && superResolution ? { hires_fix: true } : {}),
+      ...(colorGrading ? { color_grading: colorGrading } : {}),
     },
   };
 
@@ -183,6 +203,138 @@ export async function generateImages(params: GenerateParams): Promise<AstriaProm
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`Astria generateImages failed: ${res.status} ${text}`);
+  }
+
+  return res.json();
+}
+
+export interface EditImageParams {
+  // Tune the prompt is posted against: the user's LoRA tune for identity-aware
+  // edits, or FLUX_BASE_TUNE_ID for model-free edits (restore, plain inpaint).
+  tuneId: number;
+  // Full prompt text, sent verbatim — caller is responsible for trigger
+  // phrases, <lora:...>/<faceid:...> tokens, and --outpaint args.
+  text: string;
+  // Omitted for token-composed generations (virtual try-on) that have no
+  // source image.
+  inputImageUrl?: string;
+  maskImageUrl?: string;
+  // 0 preserves the input exactly (outpaint-only); ~0.8 repaints masked areas.
+  denoisingStrength?: number;
+  numImages?: number;
+  superResolution?: boolean;
+  inpaintFaces?: boolean;
+  faceSwap?: boolean;
+  faceCorrect?: boolean;
+  hiresFix?: boolean;
+  filmGrain?: boolean;
+  cfgScale?: number;
+  steps?: number;
+  seed?: number;
+  w?: number;
+  h?: number;
+  controlnet?: string;
+  controlnetConditioningScale?: number;
+}
+
+/**
+ * Image-to-image editing: inpainting (with mask), outpainting (via --outpaint
+ * args in `text`), face swap onto an existing photo, and restoration. Same
+ * POST /tunes/{id}/prompts endpoint as generation, different knobs.
+ */
+export async function editImage(params: EditImageParams): Promise<AstriaPrompt> {
+  const {
+    tuneId,
+    text,
+    inputImageUrl,
+    maskImageUrl,
+    denoisingStrength,
+    numImages = 1,
+    superResolution = true,
+    inpaintFaces = false,
+    faceSwap = false,
+    faceCorrect = false,
+    hiresFix = false,
+    filmGrain = false,
+    cfgScale,
+    steps,
+    seed,
+    w,
+    h,
+    controlnet,
+    controlnetConditioningScale,
+  } = params;
+
+  const body = {
+    prompt: {
+      text,
+      num_images: numImages,
+      ...(inputImageUrl ? { input_image_url: inputImageUrl } : {}),
+      ...(maskImageUrl ? { mask_image_url: maskImageUrl } : {}),
+      ...(denoisingStrength !== undefined
+        ? { denoising_strength: denoisingStrength }
+        : {}),
+      super_resolution: superResolution,
+      ...(inpaintFaces && superResolution ? { inpaint_faces: true } : {}),
+      ...(faceSwap ? { face_swap: true } : {}),
+      ...(faceCorrect ? { face_correct: true } : {}),
+      ...(hiresFix && superResolution ? { hires_fix: true } : {}),
+      film_grain: filmGrain,
+      ...(cfgScale !== undefined ? { cfg_scale: cfgScale } : {}),
+      ...(steps !== undefined ? { steps } : {}),
+      ...(seed !== undefined ? { seed } : {}),
+      ...(w !== undefined ? { w } : {}),
+      ...(h !== undefined ? { h } : {}),
+      ...(controlnet ? { controlnet } : {}),
+      ...(controlnetConditioningScale !== undefined
+        ? { controlnet_conditioning_scale: controlnetConditioningScale }
+        : {}),
+    },
+  };
+
+  const res = await fetch(`${API_BASE}/tunes/${tuneId}/prompts`, {
+    method: "POST",
+    headers: headers(),
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`Astria editImage failed: ${res.status} ${errText}`);
+  }
+
+  return res.json();
+}
+
+/**
+ * Creates a faceid fine-tune of a garment for virtual try-on. Unlike LoRA
+ * training this is embedding-based and completes in seconds–minutes. The
+ * class name ("clothing") tells Astria to isolate the garment and discard
+ * any model wearing it in the reference photo.
+ */
+export async function createGarmentTune(params: {
+  title: string;
+  imageUrl: string;
+}): Promise<AstriaTune> {
+  const body = {
+    tune: {
+      title: params.title,
+      name: "clothing",
+      model_type: "faceid",
+      branch: "flux1",
+      image_urls: [params.imageUrl],
+    },
+  };
+
+  const res = await fetch(`${API_BASE}/tunes`, {
+    method: "POST",
+    headers: headers(),
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Astria createGarmentTune failed: ${res.status} ${text}`);
   }
 
   return res.json();

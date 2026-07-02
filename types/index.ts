@@ -18,6 +18,15 @@ export interface ModelImage {
   created_at: string;
 }
 
+// Studio tools write these kinds; plain generations stay 'generation'.
+export type ImageKind =
+  | "generation"
+  | "faceswap"
+  | "inpaint"
+  | "outpaint"
+  | "restore"
+  | "tryon";
+
 export interface GenerationSettings {
   // What we actually sent to Astria — the user's prompt plus any auto-prepended
   // trigger phrase and realism suffix. Useful for "why does this look like this".
@@ -35,11 +44,25 @@ export interface GenerationSettings {
   // Set when the image came from a one-click prompt pack, so we can attribute
   // generations to a pack. Absent for ad-hoc prompts.
   packId?: string;
+  // Realism upgrades (opt-in): face_swap re-injects training images at render
+  // time for stronger likeness; colorGrading applies film emulation.
+  boostLikeness?: boolean;
+  colorGrading?: "Film Velvia" | "Film Portra" | "Ektar";
+  // Studio edit inputs (faceswap/inpaint/outpaint/restore/tryon kinds).
+  sourceUrl?: string;
+  maskUrl?: string;
+  denoisingStrength?: number;
+  outpaintAnchor?: string;
+  outpaintWidth?: number;
+  outpaintHeight?: number;
+  colorize?: boolean;
+  garmentId?: string;
 }
 
 export interface GeneratedImage {
   id: string;
-  model_id: string;
+  // Null for studio edits that don't involve a trained model (restore, etc.).
+  model_id: string | null;
   user_id: string;
   prompt: string;
   url: string;
@@ -47,6 +70,18 @@ export interface GeneratedImage {
   astria_source_url: string | null;
   astria_prompt_id: number | null;
   settings: GenerationSettings | null;
+  kind: ImageKind;
+  source_image_id: string | null;
+  created_at: string;
+}
+
+export interface GarmentTune {
+  id: string;
+  user_id: string;
+  title: string;
+  astria_tune_id: number | null;
+  status: "pending" | "ready" | "failed";
+  image_url: string;
   created_at: string;
 }
 
@@ -141,4 +176,5 @@ export const CREDIT_PACKS: CreditPack[] = [
 export const CREDIT_COSTS = {
   TRAINING: 20, // cost to train one model
   GENERATION: 1, // cost per generated image
+  GARMENT: 5, // cost to fine-tune one garment for virtual try-on
 } as const;

@@ -30,6 +30,11 @@ const schema = z.object({
   // When true and numImages > 1, fan out into N parallel single-image
   // generations with far-apart random seeds — gives much more variety.
   variety: z.boolean().default(false),
+  // Re-injects training images at render time (Astria face_swap +
+  // inpaint_faces) for noticeably stronger likeness. Slower per image.
+  boostLikeness: z.boolean().default(false),
+  // Film emulation applied at render time.
+  colorGrading: z.enum(["Film Velvia", "Film Portra", "Ektar"]).nullable().optional(),
 });
 
 function randomSeed() {
@@ -112,6 +117,8 @@ export async function POST(req: NextRequest) {
     aspectRatio,
     seed: seedInput,
     variety,
+    boostLikeness,
+    colorGrading,
   } = parsed.data;
   const preset = presetParams(realism);
   log.info("input_validated", {
@@ -174,7 +181,8 @@ export async function POST(req: NextRequest) {
     supabase,
     user.id,
     "GENERATION",
-    `Generate ${numImages} image(s): ${prompt.slice(0, 50)}`
+    `Generate ${numImages} image(s): ${prompt.slice(0, 50)}`,
+    numImages
   );
 
   if (!success) {
@@ -225,6 +233,11 @@ export async function POST(req: NextRequest) {
       cfgScale: preset.cfgScale,
       realismSuffix: preset.realismSuffix,
       aspectRatio,
+      faceSwap: boostLikeness,
+      inpaintFaces: boostLikeness,
+      // Polished preset gets the extra detail pass when upscaling.
+      hiresFix: realism === "polished",
+      ...(colorGrading ? { colorGrading } : {}),
     };
 
     // Two paths:
@@ -346,6 +359,8 @@ export async function POST(req: NextRequest) {
         faceCorrect,
         superResolution,
         variety,
+        boostLikeness,
+        ...(colorGrading ? { colorGrading } : {}),
         cfgScale: preset.cfgScale,
         seed: pair?.seed ?? null,
       };

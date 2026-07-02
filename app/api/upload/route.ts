@@ -8,7 +8,10 @@ import crypto from "crypto";
 const schema = z.object({
   filename: z.string().min(1),
   contentType: z.enum(["image/jpeg", "image/png", "image/webp"]),
-  modelId: z.string().uuid(),
+  // training: photo set for a model (modelId required, ownership checked).
+  // edit: source photos / masks for studio tools. garment: try-on garments.
+  purpose: z.enum(["training", "edit", "garment"]).default("training"),
+  modelId: z.string().uuid().optional(),
 });
 
 export async function POST(req: NextRequest) {
@@ -56,30 +59,45 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const { filename, contentType, modelId } = parsed.data;
-
-  const { data: model, error: modelErr } = await supabase
-    .from("models")
-    .select("id, status")
-    .eq("id", modelId)
-    .eq("user_id", user.id)
-    .single();
-
-  if (modelErr || !model) {
-    log.warn("model_lookup_failed", {
-      userId: user.id,
-      modelId,
-      pgCode: modelErr?.code,
-      pgMessage: modelErr?.message,
-    });
-    return NextResponse.json(
-      { error: "Model not found", reqId: log.reqId },
-      { status: 404 }
-    );
-  }
+  const { filename, contentType, purpose, modelId } = parsed.data;
 
   const ext = filename.split(".").pop() ?? "jpg";
-  const path = `${user.id}/${modelId}/${crypto.randomUUID()}.${ext}`;
+  let path: string;
+
+  if (purpose === "training") {
+    if (!modelId) {
+      return NextResponse.json(
+        { error: "modelId is required for training uploads", reqId: log.reqId },
+        { status: 400 }
+      );
+    }
+
+    const { data: model, error: modelErr } = await supabase
+      .from("models")
+      .select("id, status")
+      .eq("id", modelId)
+      .eq("user_id", user.id)
+      .single();
+
+    if (modelErr || !model) {
+      log.warn("model_lookup_failed", {
+        userId: user.id,
+        modelId,
+        pgCode: modelErr?.code,
+        pgMessage: modelErr?.message,
+      });
+      return NextResponse.json(
+        { error: "Model not found", reqId: log.reqId },
+        { status: 404 }
+      );
+    }
+
+    path = `${user.id}/${modelId}/${crypto.randomUUID()}.${ext}`;
+  } else {
+    // Studio uploads live outside any model folder so model deletion never
+    // sweeps them: {userId}/edits/... or {userId}/garments/...
+    path = `${user.id}/${purpose === "garment" ? "garments" : "edits"}/${crypto.randomUUID()}.${ext}`;
+  }
 
   try {
     const upload = await createSignedUpload(supabase, path);

@@ -13,13 +13,19 @@ export async function getBalance(
   return data?.balance ?? 0;
 }
 
+/**
+ * Atomically deducts `CREDIT_COSTS[type] * count` credits.
+ * The RPC returns the new balance, or -1 when the balance is insufficient —
+ * note that 0 is a *valid* new balance (user spent their last credit).
+ */
 export async function deductCredits(
   supabase: SupabaseClient,
   userId: string,
   type: keyof typeof CREDIT_COSTS,
-  description: string
+  description: string,
+  count = 1
 ): Promise<{ success: boolean; balance: number }> {
-  const cost = CREDIT_COSTS[type];
+  const cost = CREDIT_COSTS[type] * count;
 
   const { data, error } = await supabase.rpc("deduct_credits", {
     p_user_id: userId,
@@ -28,7 +34,9 @@ export async function deductCredits(
     p_description: description,
   });
 
-  if (error || !data) return { success: false, balance: 0 };
+  if (error || typeof data !== "number" || data < 0) {
+    return { success: false, balance: typeof data === "number" ? data : 0 };
+  }
   return { success: true, balance: data };
 }
 

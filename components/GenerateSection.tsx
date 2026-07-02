@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Sparkles, Loader2, Download, Coins, RefreshCw, ChevronDown, Dice5, Info, X, Share2, Check, Copy, Trash2, ImageDown } from "lucide-react";
+import Link from "next/link";
+import { Sparkles, Loader2, Download, Coins, RefreshCw, ChevronDown, Dice5, Info, X, Share2, Check, Copy, Trash2, ImageDown, Wand2 } from "lucide-react";
 import { Model, GeneratedImage } from "@/types";
 import { PackPicker } from "./PackPicker";
 
@@ -78,6 +79,8 @@ export function GenerateSection({
   const [faceCorrect, setFaceCorrect] = useState(false);
   const [superResolution, setSuperResolution] = useState(false);
   const [variety, setVariety] = useState(false);
+  const [boostLikeness, setBoostLikeness] = useState(false);
+  const [colorGrading, setColorGrading] = useState<string>("");
   const [seed, setSeed] = useState<string>("");
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [generating, setGenerating] = useState(false);
@@ -138,6 +141,8 @@ export function GenerateSection({
       if (typeof s.faceCorrect === "boolean") setFaceCorrect(s.faceCorrect);
       if (typeof s.superResolution === "boolean") setSuperResolution(s.superResolution);
       if (typeof s.variety === "boolean") setVariety(s.variety);
+      if (typeof s.boostLikeness === "boolean") setBoostLikeness(s.boostLikeness);
+      setColorGrading(s.colorGrading ?? "");
       if (typeof s.seed === "number") setSeed(String(s.seed));
       else setSeed("");
     }
@@ -195,6 +200,8 @@ export function GenerateSection({
           faceCorrect,
           superResolution,
           variety,
+          boostLikeness,
+          colorGrading: colorGrading || null,
           seed: seed.trim() === "" ? null : Number(seed),
         }),
       });
@@ -377,6 +384,52 @@ export function GenerateSection({
                     </p>
                   </div>
                 </label>
+
+                <label className="flex items-start gap-3 text-sm cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={boostLikeness}
+                    onChange={(e) => setBoostLikeness(e.target.checked)}
+                    className="mt-1 accent-purple-500"
+                  />
+                  <div>
+                    <div className="font-medium">Boost likeness</div>
+                    <p className="text-xs text-gray-500">
+                      Re-injects your training photos at render time so the face
+                      matches you more closely. The single biggest realism upgrade
+                      for faces. Slower per photo. Pairs well with Upscale 4×.
+                    </p>
+                  </div>
+                </label>
+
+                <div>
+                  <div className="font-medium text-sm">Film look</div>
+                  <p className="text-xs text-gray-500 mb-2">
+                    Grades colors like a classic film stock — subtle but kills the
+                    &ldquo;AI sheen&rdquo;. Portra flatters skin tones.
+                  </p>
+                  <div className="flex items-center gap-2">
+                    {[
+                      ["", "None"],
+                      ["Film Portra", "Portra"],
+                      ["Film Velvia", "Velvia"],
+                      ["Ektar", "Ektar"],
+                    ].map(([value, label]) => (
+                      <button
+                        key={value}
+                        type="button"
+                        onClick={() => setColorGrading(value)}
+                        className={`px-3 py-1.5 rounded-lg text-xs border transition-colors ${
+                          colorGrading === value
+                            ? "bg-purple-500/20 border-purple-500/40 text-purple-200"
+                            : "border-white/10 text-gray-400 hover:text-white"
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
 
                 <label className="flex items-start gap-3 text-sm cursor-pointer">
                   <input
@@ -943,6 +996,14 @@ function ImageDetailModal({
                 )}
                 Share
               </button>
+              <Link
+                href={`/studio?tool=inpaint&src=${encodeURIComponent(image.url)}`}
+                className="inline-flex items-center justify-center gap-2 bg-white/5 hover:bg-white/10 border border-white/10 px-4 py-2 rounded-xl text-sm font-medium transition-colors"
+                title="Edit in Studio — replace background, remove objects, uncrop"
+              >
+                <Wand2 className="w-4 h-4" />
+                Edit
+              </Link>
               <a
                 href={image.url}
                 download
