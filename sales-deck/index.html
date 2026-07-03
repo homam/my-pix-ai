@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>MyPix AI — Sales Deck</title>
+<style>
+  :root {
+    --bg: #0a0a0a;
+    --bg-2: #120a1f;
+    --ink: #f5f5f7;
+    --muted: #9aa0ab;
+    --faint: #6b7280;
+    --purple: #a855f7;
+    --purple-2: #7c3aed;
+    --pink: #ec4899;
+    --line: rgba(255, 255, 255, 0.08);
+    --card: rgba(255, 255, 255, 0.035);
+    --card-line: rgba(255, 255, 255, 0.07);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html, body {
+    height: 100%;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    overflow: hidden;
+  }
+
+  .gradient-text {
+    background: linear-gradient(100deg, #c084fc 0%, #e879f9 45%, #f472b6 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  /* ---------- Deck / slide mechanics ---------- */
+  .deck { height: 100vh; width: 100vw; position: relative; }
+
+  .slide {
+    position: absolute;
+    inset: 0;
+    display: none;
+    flex-direction: column;
+    justify-content: center;
+    padding: 6vh 8vw;
+    opacity: 0;
+    background:
+      radial-gradient(1100px 700px at 78% -10%, rgba(168, 85, 247, 0.16), transparent 60%),
+      radial-gradient(900px 600px at 8% 110%, rgba(236, 72, 153, 0.12), transparent 55%),
+      var(--bg);
+  }
+  .slide.active {
+    display: flex;
+    opacity: 1;
+    animation: fade 0.5s ease both;
+  }
+  @keyframes fade {
+    from { opacity: 0; transform: translateY(14px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .kicker {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    align-self: flex-start;
+    font-size: clamp(0.7rem, 1.1vw, 0.85rem);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #d8b4fe;
+    background: rgba(168, 85, 247, 0.1);
+    border: 1px solid rgba(168, 85, 247, 0.25);
+    border-radius: 999px;
+    padding: 6px 14px;
+    margin-bottom: 28px;
+  }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--purple); box-shadow: 0 0 12px var(--purple); }
+
+  h1 { font-size: clamp(2.4rem, 6.2vw, 5rem); line-height: 1.02; font-weight: 800; letter-spacing: -0.03em; }
+  h2 { font-size: clamp(1.9rem, 4.4vw, 3.4rem); line-height: 1.05; font-weight: 800; letter-spacing: -0.025em; margin-bottom: 8px; }
+  .sub { font-size: clamp(1rem, 1.7vw, 1.5rem); color: var(--muted); max-width: 60ch; line-height: 1.5; margin-top: 22px; }
+  .slide-lead { color: var(--muted); font-size: clamp(0.95rem, 1.5vw, 1.25rem); margin-bottom: 38px; max-width: 56ch; }
+
+  /* ---------- Reusable layout ---------- */
+  .grid { display: grid; gap: 20px; width: 100%; }
+  .g-2 { grid-template-columns: repeat(2, 1fr); }
+  .g-3 { grid-template-columns: repeat(3, 1fr); }
+  .g-4 { grid-template-columns: repeat(4, 1fr); }
+
+  .card {
+    background: var(--card);
+    border: 1px solid var(--card-line);
+    border-radius: 18px;
+    padding: 26px;
+  }
+  .card h3 { font-size: clamp(1rem, 1.5vw, 1.3rem); font-weight: 650; margin-bottom: 8px; }
+  .card p { color: var(--muted); font-size: clamp(0.82rem, 1.15vw, 1rem); line-height: 1.5; }
+  .card .ico { font-size: 1.7rem; margin-bottom: 14px; display: block; }
+  .card .num { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--purple); font-size: 0.85rem; }
+
+  .feat { display: flex; gap: 14px; align-items: flex-start; }
+  .feat .ico { font-size: 1.5rem; line-height: 1; }
+  .feat h3 { margin-bottom: 4px; }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 12px; max-width: 90%; }
+  .chip {
+    background: rgba(255,255,255,0.05);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 10px 18px;
+    font-size: clamp(0.82rem, 1.2vw, 1.05rem);
+    color: #d6d9df;
+  }
+  .chip.hot { border-color: rgba(168,85,247,0.4); background: rgba(168,85,247,0.12); color: #e9d5ff; }
+
+  ul.bullets { list-style: none; margin-top: 8px; }
+  ul.bullets li {
+    position: relative; padding-left: 30px; margin-bottom: 18px;
+    color: var(--muted); font-size: clamp(0.95rem, 1.5vw, 1.25rem); line-height: 1.45;
+  }
+  ul.bullets li strong { color: var(--ink); font-weight: 650; }
+  ul.bullets li::before {
+    content: ""; position: absolute; left: 0; top: 0.5em;
+    width: 12px; height: 12px; border-radius: 3px;
+    background: linear-gradient(135deg, var(--purple), var(--pink));
+  }
+
+  /* ---------- Stat / pricing ---------- */
+  .stats { display: flex; gap: 56px; flex-wrap: wrap; margin-top: 30px; }
+  .stat .big { font-size: clamp(2.2rem, 5vw, 4rem); font-weight: 800; letter-spacing: -0.03em; }
+  .stat .lbl { color: var(--muted); font-size: clamp(0.8rem, 1.2vw, 1rem); margin-top: 4px; }
+
+  .price-card { text-align: left; position: relative; display: flex; flex-direction: column; }
+  .price-card.pop { border-color: rgba(168,85,247,0.5); box-shadow: 0 0 60px rgba(168,85,247,0.18); }
+  .price-card .tag {
+    position: absolute; top: -12px; right: 18px; font-size: 0.7rem; letter-spacing: 0.06em;
+    text-transform: uppercase; background: linear-gradient(135deg, var(--purple), var(--pink));
+    color: #fff; padding: 5px 12px; border-radius: 999px; font-weight: 600;
+  }
+  .price-card .name { font-size: 1.1rem; color: var(--muted); margin-bottom: 10px; }
+  .price-card .amt { font-size: clamp(2rem, 4vw, 3rem); font-weight: 800; letter-spacing: -0.03em; }
+  .price-card .amt span { font-size: 1rem; color: var(--faint); font-weight: 500; }
+  .price-card ul { list-style: none; margin-top: 18px; }
+  .price-card ul li { color: var(--muted); font-size: 0.9rem; padding: 7px 0 7px 24px; position: relative; }
+  .price-card ul li::before { content: "✓"; position: absolute; left: 0; color: var(--purple); font-weight: 700; }
+
+  .pill-row { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 26px; }
+  .pill { display: inline-flex; align-items: center; gap: 10px; background: var(--card); border: 1px solid var(--card-line); border-radius: 14px; padding: 14px 20px; font-size: clamp(0.85rem,1.2vw,1.05rem); }
+  .pill b { color: var(--ink); }
+  .pill .v { color: var(--purple); font-weight: 700; }
+
+  .cta-btn {
+    display: inline-flex; align-items: center; gap: 10px; align-self: flex-start;
+    background: linear-gradient(135deg, var(--purple-2), var(--purple));
+    color: #fff; font-size: clamp(1rem, 1.6vw, 1.3rem); font-weight: 600;
+    padding: 16px 32px; border-radius: 14px; margin-top: 36px;
+    box-shadow: 0 0 50px rgba(168,85,247,0.35);
+  }
+  .foot-note { color: var(--faint); font-size: clamp(0.8rem,1.1vw,0.95rem); margin-top: 18px; }
+
+  .brand { display: inline-flex; align-items: center; gap: 10px; font-weight: 650; font-size: 1.05rem; }
+  .brand .mark { width: 26px; height: 26px; border-radius: 7px; background: linear-gradient(135deg, var(--purple), var(--pink)); display: inline-block; }
+
+  .two-col { display: grid; grid-template-columns: 1.05fr 1fr; gap: 56px; align-items: center; width: 100%; }
+
+  /* photo mock grid (title + scenario slides) */
+  .mock { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
+  .mock .ph {
+    aspect-ratio: 4/5; border-radius: 16px; border: 1px solid var(--card-line);
+    background: linear-gradient(160deg, rgba(168,85,247,0.18), rgba(236,72,153,0.1)), #15101f;
+    display: flex; align-items: flex-end; padding: 14px; position: relative; overflow: hidden;
+  }
+  .mock .ph span { font-size: 0.78rem; color: #e7d6ff; background: rgba(0,0,0,0.45); border-radius: 8px; padding: 5px 9px; backdrop-filter: blur(4px); }
+  .mock .ph::before { content: "👤"; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 3rem; opacity: 0.35; }
+
+  /* ---------- Chrome: nav, progress, counter ---------- */
+  .progress { position: fixed; top: 0; left: 0; height: 3px; background: linear-gradient(90deg, var(--purple), var(--pink)); z-index: 50; transition: width 0.4s ease; }
+  .counter { position: fixed; bottom: 22px; right: 26px; font-size: 0.8rem; color: var(--faint); z-index: 50; font-variant-numeric: tabular-nums; }
+  .brand-tag { position: fixed; bottom: 22px; left: 26px; z-index: 50; opacity: 0.85; }
+  .nav { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); display: flex; gap: 8px; z-index: 50; }
+  .nav button {
+    width: 38px; height: 38px; border-radius: 10px; border: 1px solid var(--line);
+    background: rgba(255,255,255,0.04); color: var(--ink); cursor: pointer; font-size: 1rem;
+    display: flex; align-items: center; justify-content: center; transition: background 0.2s;
+  }
+  .nav button:hover { background: rgba(168,85,247,0.2); }
+  .hint { position: fixed; bottom: 26px; left: 50%; transform: translateX(-50%); color: var(--faint); font-size: 0.72rem; z-index: 49; opacity: 0; animation: hintFade 5s ease forwards; }
+  @keyframes hintFade { 0%,70% { opacity: 0.6; } 100% { opacity: 0; } }
+
+  /* ---------- Print → PDF (one slide per page) ---------- */
+  @media print {
+    @page { size: 1280px 720px; margin: 0; }
+    html, body { overflow: visible; height: auto; }
+    .progress, .counter, .nav, .hint, .brand-tag { display: none !important; }
+    .deck { height: auto; }
+    .slide {
+      display: flex !important; opacity: 1 !important; position: relative; inset: auto;
+      width: 1280px; height: 720px; page-break-after: always; break-after: page; animation: none;
+      -webkit-print-color-adjust: exact; print-color-adjust: exact;
+    }
+  }
+
+  @media (max-width: 720px) {
+    .two-col { grid-template-columns: 1fr; gap: 28px; }
+    .g-3, .g-4 { grid-template-columns: repeat(2, 1fr); }
+    .slide { padding: 7vh 7vw; }
+  }
+</style>
+</head>
+<body>
+<div class="progress" id="progress"></div>
+<div class="brand-tag"><span class="brand"><span class="mark"></span> MyPix AI</span></div>
+
+<div class="deck" id="deck">
+
+  <!-- 1. Title -->
+  <section class="slide">
+    <div class="two-col">
+      <div>
+        <span class="kicker"><span class="dot"></span> Powered by FLUX.1 · State-of-the-art photorealism</span>
+        <h1>Your AI photo studio,<br><span class="gradient-text">trained on you.</span></h1>
+        <p class="sub">Upload 15–25 photos. We fine-tune a personal AI model on your likeness in ~15 minutes. Then generate photorealistic photos of yourself in <em>any</em> scenario, outfit, or style — forever.</p>
+        <span class="cta-btn">Create your AI model →</span>
+        <p class="foot-note">First model free · No subscription required</p>
+      </div>
+      <div class="mock">
+        <div class="ph"><span>Forbes cover portrait</span></div>
+        <div class="ph"><span>Yacht in the Med</span></div>
+        <div class="ph"><span>Paris fashion week</span></div>
+        <div class="ph"><span>Astronaut in space</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 2. Problem -->
+  <section class="slide">
+    <span class="kicker"><span class="dot"></span> The problem</span>
+    <h2>Great photos of <span class="gradient-text">yourself</span> are expensive, slow, and one-and-done.</h2>
+    <div class="grid g-3" style="margin-top:42px;">
+      <div class="card"><span class="ico">💸</span><h3>$300–$1,500 a shoot</h3><p>A professional photographer, studio, and stylist costs real money — for a single look on a single day.</p></div>
+      <div class="card"><span class="ico">🗓️</span><h3>Days of waiting</h3><p>Book weeks ahead, shoot, then wait for edits. Need a new outfit or background? Start over.</p></div>
+      <div class="card"><span class="ico">🖼️</span><h3>A handful of shots</h3><p>You walk away with a few frames in one setting. LinkedIn, dating, travel, fantasy — each needs its own shoot.</p></div>
+    </div>
+    <p class="slide-lead" style="margin-top:36px;margin-bottom:0;">Meanwhile you need fresh photos constantly — for work, profiles, socials, and brand.</p>
+  </section>
+
+  <!-- 3. Solution -->
+  <section class="slide">
+    <span class="kicker"><span class="dot"></span> The solution</span>
+    <h2>Train once. <span class="gradient-text">Generate forever.</span></h2>
+    <p class="slide-lead">MyPix AI fine-tunes a personal FLUX.1 model on your face. After that, every photo you'll ever need is a prompt away — unlimited looks, locations, and styles, in seconds, for cents.</p>
+    <div class="stats">
+      <div class="stat"><div class="big gradient-text">~15 min</div><div class="lbl">to train your model</div></div>
+      <div class="stat"><div class="big gradient-text">&lt;30 sec</div><div class="lbl">per photo, photorealistic</div></div>
+      <div class="stat"><div class="big gradient-text">∞</div><div class="lbl">scenarios, outfits &amp; styles</div></div>
+      <div class="stat"><div class="big gradient-text">1 credit</div><div class="lbl">per generated photo</div></div>
+    </div>
+  </section>
+
+  <!-- 4. How it works -->
+  <section class="slide">
+    <span class="kicker"><span class="dot"></span> How it works</span>
+    <h2>Three steps. Fifteen minutes. <span class="gradient-text">Infinite photos.</span></h2>
+    <div class="grid g-3" style="margin-top:44px;">
+      <div class="card"><span class="num">01</span><h3 style="margin-top:8px;">📸 Upload your photos</h3><p>Drop 15–25 clear, varied selfies. Different angles, lighting, and expressions train the sharpest likeness. Files upload directly and securely to your private storage.</p></div>
+      <div class="card"><span class="num">02</span><h3 style="margin-top:8px;">⚡ We train your model</h3><p>Our FLUX.1 LoRA fine-tuning pipeline captures your exact face in ~10 minutes. Live progress UI — no babysitting required.</p></div>
+      <div class="card"><span class="num">03</span><h3 style="margin-top:8px;">✨ Generate anything</h3><p>Pick a one-click pack or write your own prompt. Get photorealistic photos of yourself anywhere, in anything, instantly.</p></div>
+    </div>
+  </section>
+
+  <!-- 5. Studio controls -->
+  <section class="slide">
+    <span class="kicker"><span class="dot"></span> Feature · Studio-grade control</span>
+    <h2>A real photo studio's dials — <span class="gradient-text">in software.</span></h2>
+    <p class="slide-lead">Every generation is tunable. Dial in exactly the look you want, then reproduce or remix it.</p>
+    <div class="grid g-3">
+      <div class="feat"><span class="ico">🎚️</span><div><h3>Realism presets</h3><p>Polished, Natural, or Documentary — from studio-clean to candid grain.</p></div></div>
+      <div class="feat"><span class="ico">📐</span><div><h3>6 aspect ratios</h3><p>1:1, 4:5, 2:3, 3:2, 9:16, 16:9 — tuned for feeds, Stories, print &amp; wallpaper.</p></div></div>
+      <div class="feat"><span class="ico">🎞️</span><div><h3>Film grain</h3><p>Add cinematic texture for authentic, non-plasticky skin.</p></div></div>
+      <div class="feat"><span class="ico">😊</span><div><h3>Face correct</h3><p>Inpaint pass for razor-sharp identity preservation.</p></div></div>
+      <div class="feat"><span class="ico">🔍</span><div><h3>Super resolution</h3><p>Upscale to crisp, print-ready, high-resolution output.</p></div></div>
+      <div class="feat"><span class="ico">🎲</span><div><h3>Seed &amp; variety</h3><p>Lock a seed to reproduce a shot, or crank variety for fresh poses every time.</p></div></div>
+    </div>
+  </section>
+
+  <!-- 6. Prompt packs -->
+  <section class="slide">
+    <span class="kicker"><span class="dot"></span> Feature · One-click prompt packs</span>
+    <h2>Don't know what to type? <span class="gradient-text">Tap a pack.</span></h2>
+    <p class="slide-lead">Curated, expert-tuned prompt sets fan out a whole shoot in one click — each with its own optimized realism, aspect ratio, and finishing settings.</p>
+    <div class="grid g-3">
+      <div class="card"><span class="ico">💼</span><h3>Professional Headshots</h3><p>LinkedIn-ready studio headshots in business attire.</p></div>
+      <div class="card"><span class="ico">🌃</span><h3>Cyberpunk</h3><p>Neon-soaked futuristic city portraits.</p></div>
+      <div class="card"><span class="ico">🥂</span><h3>Old Money</h3><p>Quiet-luxury editorial in timeless settings.</p></div>
+      <div class="card"><span class="ico">💛</span><h3>Dating Profile</h3><p>Warm, approachable shots that get right-swipes.</p></div>
+      <div class="card"><span class="ico">🏔️</span><h3>Outdoor &amp; Adventure</h3><p>Epic landscapes and travel-magazine energy.</p></div>
+      <div class="card"><span class="ico">🎞️</span><h3>Black &amp; White Editorial</h3><p>High-contrast monochrome studio portraits.</p></div>
+    </div>
+  </section>
+
+  <!-- 7. Any scenario -->
+  <section class="slide">
+    <span class="kicker"><span class="dot"></span> Feature · Total creative freedom</span>
+    <h2>Any scenario. Any style. <span class="gradient-text">Any you.</span></h2>
+    <p class="slide-lead">Beyond the packs, write any prompt at all. If you can describe it, your model can be in it.</p>
+    <div class="chips">
+      <span class="chip hot">Professional LinkedIn headshot</span>
+      <span class="chip">Astronaut on Mars</span>
+      <span class="chip">Renaissance oil painting</span>
+      <span class="chip hot">CEO for a Forbes cover</span>
+      <span class="chip">Fantasy warrior</span>
+      <span class="chip">Beach vacation in the Maldives</span>
+      <span class="chip hot">NYC fashion shoot</span>
+      <span class="chip">Cyberpunk city at night</span>
+      <span class="chip">Wedding portrait</span>
+      <span class="chip">Action-movie poster</span>
+      <span class="chip">Vintage 1950s style</span>
+      <span class="chip">Underwater photographer</span>
+    </div>
+  </section>
+
+  <!-- 8. Share -->
+  <section class="slide">
+    <div class="two-col">
+      <div>
+        <span class="kicker"><span class="dot"></span> Feature · Share &amp; grow</span>
+        <h2>Built to <span class="gradient-text">go viral.</span></h2>
+        <ul class="bullets">
+          <li><strong>Public share links</strong> — turn any set of generations into a beautiful, no-login gallery page.</li>
+          <li><strong>Rich link previews</strong> — auto-generated Open Graph cards make every share look great on social.</li>
+          <li><strong>View counts</strong> — see the reach on each gallery you publish.</li>
+          <li><strong>Cover images</strong> — pick the hero shot that represents each of your models.</li>
+        </ul>
+      </div>
+      <div class="mock">
+        <div class="ph"><span>🔗 mypix.ai/s/abc123</span></div>
+        <div class="ph"><span>👁 1,204 views</span></div>
+        <div class="ph"><span>Shared to X</span></div>
+        <div class="ph"><span>OG preview card</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 9. Privacy -->
+  <section class="slide">
+    <span class="kicker"><span class="dot"></span> Trust · Privacy first</span>
+    <h2>Your face. <span class="gradient-text">Your data. Your rules.</span></h2>
+    <div class="grid g-3" style="margin-top:42px;">
+      <div class="card"><span class="ico">🔒</span><h3>Encrypted &amp; private</h3><p>Photos are encrypted at rest in isolated, per-user storage with row-level security. Only you can see your uploads.</p></div>
+      <div class="card"><span class="ico">🚫</span><h3>Never used to train others</h3><p>Your model is yours alone. We never fold your images into shared or foundation models.</p></div>
+      <div class="card"><span class="ico">🗑️</span><h3>Delete anytime</h3><p>One click wipes your account, models, generated images, and every uploaded file — permanently.</p></div>
+    </div>
+    <p class="slide-lead" style="margin-top:36px;margin-bottom:0;">Passwordless magic-link sign-in. No password to leak, nothing to remember.</p>
+  </section>
+
+  <!-- 10. Tech / why it's good -->
+  <section class="slide">
+    <span class="kicker"><span class="dot"></span> Under the hood</span>
+    <h2>State-of-the-art models, <span class="gradient-text">production-grade plumbing.</span></h2>
+    <div class="grid g-4" style="margin-top:40px;">
+      <div class="card"><span class="ico">🧠</span><h3>FLUX.1 dev</h3><p>The same frontier diffusion model behind the world's best AI photo apps, with a portrait-tuned LoRA preset for identity.</p></div>
+      <div class="card"><span class="ico">⚡</span><h3>Fast &amp; resilient</h3><p>Webhook completion with an automatic polling fallback — training results never get lost.</p></div>
+      <div class="card"><span class="ico">📩</span><h3>You're notified</h3><p>Email on training complete or failed, so you never sit and refresh.</p></div>
+      <div class="card"><span class="ico">🔁</span><h3>Self-healing</h3><p>One-click retry on any failed run, with live status sync from the training backend.</p></div>
+    </div>
+  </section>
+
+  <!-- 11. Pricing -->
+  <section class="slide">
+    <span class="kicker"><span class="dot"></span> Pricing · Credits, not subscriptions</span>
+    <h2>Buy once. Use whenever. <span class="gradient-text">No subscription.</span></h2>
+    <div class="pill-row">
+      <span class="pill"><b>Train a model</b> <span class="v">20 credits</span></span>
+      <span class="pill"><b>Generate a photo</b> <span class="v">1 credit</span></span>
+      <span class="pill"><b>New users</b> <span class="v">first model free</span></span>
+    </div>
+    <div class="grid g-3" style="margin-top:30px;">
+      <div class="card price-card"><div class="name">Starter</div><div class="amt">$9 <span>/ 50 credits</span></div><ul><li>2 AI models</li><li>~10 generated photos</li><li>Credits never expire</li></ul></div>
+      <div class="card price-card pop"><div class="tag">Most popular</div><div class="name">Pro</div><div class="amt">$29 <span>/ 200 credits</span></div><ul><li>10 AI models</li><li>~180 generated photos</li><li>All studio controls &amp; packs</li></ul></div>
+      <div class="card price-card"><div class="name">Ultra</div><div class="amt">$59 <span>/ 500 credits</span></div><ul><li>25 AI models</li><li>~480 generated photos</li><li>Best value per photo</li></ul></div>
+    </div>
+  </section>
+
+  <!-- 12. CTA -->
+  <section class="slide" style="align-items:center;text-align:center;">
+    <span class="kicker" style="align-self:center;"><span class="dot"></span> Get started</span>
+    <h1 style="max-width:18ch;">Ready to see yourself <span class="gradient-text">everywhere?</span></h1>
+    <p class="sub" style="text-align:center;">Your first AI model is free. Upload a few photos and meet the most photographed version of you.</p>
+    <span class="cta-btn" style="align-self:center;">Start for free →</span>
+    <p class="foot-note">MyPix AI · hello@mypix.ai</p>
+  </section>
+
+</div>
+
+<div class="nav">
+  <button id="prev" aria-label="Previous slide">‹</button>
+  <button id="next" aria-label="Next slide">›</button>
+</div>
+<div class="counter"><span id="cur">1</span> / <span id="total">12</span></div>
+<div class="hint">Use ← → arrow keys · Press F for fullscreen · Cmd/Ctrl-P to export PDF</div>
+
+<script>
+  const slides = Array.from(document.querySelectorAll('.slide'));
+  const total = slides.length;
+  let i = 0;
+  document.getElementById('total').textContent = total;
+
+  function show(n) {
+    i = Math.max(0, Math.min(total - 1, n));
+    slides.forEach((s, k) => s.classList.toggle('active', k === i));
+    document.getElementById('cur').textContent = i + 1;
+    document.getElementById('progress').style.width = ((i + 1) / total * 100) + '%';
+  }
+  function next() { show(i + 1); }
+  function prev() { show(i - 1); }
+
+  document.getElementById('next').onclick = next;
+  document.getElementById('prev').onclick = prev;
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowRight' || e.key === 'PageDown' || e.key === ' ') { e.preventDefault(); next(); }
+    else if (e.key === 'ArrowLeft' || e.key === 'PageUp') { e.preventDefault(); prev(); }
+    else if (e.key === 'Home') show(0);
+    else if (e.key === 'End') show(total - 1);
+    else if (e.key.toLowerCase() === 'f') {
+      if (!document.fullscreenElement) document.documentElement.requestFullscreen?.();
+      else document.exitFullscreen?.();
+    }
+  });
+
+  // touch swipe
+  let x0 = null;
+  document.addEventListener('touchstart', e => x0 = e.touches[0].clientX, { passive: true });
+  document.addEventListener('touchend', e => {
+    if (x0 === null) return;
+    const dx = e.changedTouches[0].clientX - x0;
+    if (Math.abs(dx) > 50) (dx < 0 ? next : prev)();
+    x0 = null;
+  }, { passive: true });
+
+  show(0);
+</script>
+</body>
+</html>

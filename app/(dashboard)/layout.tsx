@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { Sparkles, LayoutDashboard, Plus, LogOut, Coins, User, Wand2, Images } from "lucide-react";
 import { getBalance } from "@/lib/credits";
+import { BRAND } from "@/lib/brand";
 
 export default async function DashboardLayout({
   children,
@@ -32,7 +33,7 @@ export default async function DashboardLayout({
         <div className="p-6 border-b border-white/5">
           <Link href="/" className="flex items-center gap-2">
             <Sparkles className="w-5 h-5 text-purple-400" />
-            <span className="font-semibold">MyPix AI</span>
+            <span className="font-semibold">{BRAND.name}</span>
           </Link>
         </div>
 

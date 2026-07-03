@@ -15,6 +15,7 @@ import {
 import { CREDIT_COSTS } from "@/types";
 import { createClient } from "@/lib/supabase/client";
 import { STORAGE_BUCKET } from "@/lib/storage";
+import { EngineOption, type Engine } from "@/components/EngineOption";
 
 const MIN_PHOTOS = 10;
 const MAX_PHOTOS = 30;
@@ -37,10 +38,6 @@ type Phase =
   | "uploading"
   | "starting-training"
   | "done";
-
-// User-facing engine tiers. We deliberately do not surface the underlying
-// vendor/model (Astria FLUX.1 vs fal FLUX.2) — just a quality ladder.
-type Engine = "astria" | "fal";
 
 export function NewModelForm({
   creditBalance,
@@ -487,49 +484,6 @@ export function NewModelForm({
         </button>
       </div>
     </form>
-  );
-}
-
-function EngineOption({
-  selected,
-  disabled,
-  onSelect,
-  title,
-  subtitle,
-  badge,
-}: {
-  selected: boolean;
-  disabled: boolean;
-  onSelect: () => void;
-  title: string;
-  subtitle: string;
-  badge?: string;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onSelect}
-      disabled={disabled}
-      aria-pressed={selected}
-      className={`text-left rounded-xl border p-4 transition-colors disabled:cursor-not-allowed ${
-        selected
-          ? "border-purple-500 bg-purple-500/10"
-          : "border-white/10 hover:border-purple-500/40 hover:bg-white/3"
-      } ${disabled && !selected ? "opacity-50" : ""}`}
-    >
-      <div className="flex items-center gap-2 mb-1">
-        <span className="text-sm font-medium text-white">{title}</span>
-        {badge && (
-          <span className="text-[10px] uppercase tracking-wide bg-purple-500/20 text-purple-200 rounded px-1.5 py-0.5">
-            {badge}
-          </span>
-        )}
-        {selected && (
-          <CheckCircle className="w-4 h-4 text-purple-300 ml-auto" />
-        )}
-      </div>
-      <p className="text-xs text-gray-400 leading-snug">{subtitle}</p>
-    </button>
   );
 }
 

@@ -16,6 +16,32 @@ Cloudflare R2 is **not** used — photo storage is Supabase Storage. Stripe and 
 
 ---
 
+## White-label / rebranding
+
+The app is brand-agnostic: **everything brand-variable lives in `lib/brand.ts`**, selected per
+deployment by `NEXT_PUBLIC_BRAND_KEY` (unset = `mypix`). This is the same one-product-many-brands
+model as `product-image-tools/docs/PLATFORM.md` — the key is meant to match `core.brands.key`
+if/when this app moves onto the shared platform Supabase.
+
+A `BrandConfig` holds: display name, `<title>`/meta/OG copy, canonical production URL, support
+email, legal entity (company name, optional address + jurisdiction, © since-year), and the **retail
+credit packs** (names, credits, $ prices). `/terms` and `/privacy` render from the same config.
+Product economics stay brand-independent by design (`CREDIT_COSTS` in `types/index.ts` — features
+belong to the product, per PLATFORM.md), and Stripe **price IDs stay per-deployment env vars**
+(`STRIPE_PRICE_*`), so each brand deployment points at its own Stripe prices.
+
+**To launch a rebrand:** (1) add a `BrandConfig` entry in `lib/brand.ts`; (2) deploy the same code
+with `NEXT_PUBLIC_BRAND_KEY=<key>`, that brand's domain in `NEXT_PUBLIC_APP_URL`, its own
+`STRIPE_PRICE_*` / `STRIPE_*` keys and `RESEND_FROM_EMAIL`; (3) done — no code changes. An unknown
+key fails the build loudly. Never hardcode the brand name, support email, pack prices, or legal
+entity in components — import `BRAND` (and `brandUrl()`) from `lib/brand.ts`.
+
+Not brand-scoped yet (acceptable for now, flagged for later): the purple/pink Tailwind palette,
+the Sparkles logo mark, landing-page marketing copy beyond name/tagline, and each brand still
+shares one Supabase project + Astria account per deployment.
+
+---
+
 ## Local dev setup
 
 ### 1. Supabase project (free tier works)
@@ -112,6 +138,18 @@ Either way, polling remains as a fallback — webhooks can be lost, so you alway
    - **tryon** — virtual outfit try-on: garments are Astria faceid fine-tunes (`garment_tunes` table via `POST /api/garments`, 5 credits) combined with the user's LoRA via `<lora:...>` + `<faceid:...>` prompt tokens
 
    Edits cost 1 credit/image (`GENERATION` type). Results land in `generated_images` with a `kind` column; `model_id` is nullable for model-free edits. Schema: `supabase/migrations/005_studio.sql`.
+5. **Retrain**: `POST /api/models/[id]/retry` re-runs training on an existing
+   model (statuses `ready` | `failed` | `expired` | `pending`). Body is optional:
+   `{ provider?, imageUrls? }` — omit both (the one-click card button) to reuse
+   the stored photos on the current engine; pass `provider` to **switch engine**
+   (Standard/Astria ↔ Ultra/fal); pass `imageUrls` (freshly uploaded to the
+   model's folder) to **replace the photo set** (old stored photos are then
+   pruned). Costs 20 credits (`TRAINING`), refunded on failure. Both `/api/train`
+   (first training) and this route share one engine-branched core,
+   `lib/training.ts` → `kickoffTraining()`, which also clears the other engine's
+   identity fields when switching. UI: `components/RetrainPanel.tsx` on the model
+   page (engine picker + reuse/upload photos) and a quick one-click Retrain on
+   dashboard cards for failed/expired models.
 
 ---
 
@@ -123,7 +161,12 @@ Either way, polling remains as a fallback — webhooks can be lost, so you alway
 ---
 
 ## Key files
-- `lib/astria.ts` — Astria API client (createTune, generateImages, editImage, createGarmentTune, getTune)
+- `lib/brand.ts` — white-label brand registry (name, SEO copy, support email, legal entity, credit packs); selected by `NEXT_PUBLIC_BRAND_KEY`
+- `lib/astria.ts` — Astria API client (createTune, generateImages, editImage, createGarmentTune, getTune); throws `AstriaTuneExpiredError` on expired-tune 422s
+- `lib/training.ts` — shared `kickoffTraining()` (engine-branched training kickoff) used by both `/api/train` and the retry route
+- `app/api/models/[id]/retry/route.ts` — retrain: re-roll / switch engine / new photos
+- `components/RetrainPanel.tsx` — retrain UI (engine picker + reuse/upload photos)
+- `lib/photoUpload.ts` — client signed-URL photo upload helper (shared by NewModelForm + RetrainPanel)
 - `app/api/edit/route.ts` — all five studio edit modes
 - `components/studio/StudioTools.tsx` — studio UI (tool tabs, uploads, mask editor, garment manager)
 - `app/(dashboard)/photos/page.tsx` — "All photos" library across all models + studio edits (filter by `kind`)
@@ -153,6 +196,32 @@ Either way, polling remains as a fallback — webhooks can be lost, so you alway
   `ASTRIA_COLOR_GRADING`. `color_grading` defaults off in all presets — the enum
   is unverified against a live generation and a wrong value 422s, so opt in
   explicitly once confirmed (same caution as the realism-LoRA env gate).
+
+### Tune expiration (`Tune <id> has expired`)
+Astria deletes a fine-tune — weights, training images, prompts, generated images
+— roughly **30 days after training completes**, unless the tune was created with
+`auto_extend` (a **paid** per-tune Astria add-on). Generating or editing against
+a deleted tune returns `422 {"base":["Tune <id> has expired."]}`.
+
+- **Prevention (opt-in):** `ASTRIA_AUTO_EXTEND=true` sets `auto_extend` on every
+  new tune in `createTune`/`createGarmentTune`. Off by default — auto-extending
+  every tune forever adds ongoing Astria cost, which fights the pay-as-you-go
+  model, so it's a deliberate per-deployment choice.
+- **Detection:** `lib/astria.ts` throws a typed `AstriaTuneExpiredError` (carrying
+  the tune id parsed from the 422) from `generateImages`/`editImage`.
+- **Handling:** `/api/generate` and `/api/edit` catch it, **refund** the request's
+  credits, flag the owning model `status='expired'` (best-effort — matched by
+  `astria_tune_id` in the edit route so it also covers try-on garment tunes), and
+  return a clear `409 { code: "model_expired" }`.
+- **Recovery:** the deleted weights are gone — the model must be **retrained**.
+  Uploaded photos live in our own Storage bucket (independent of Astria), so the
+  model detail page shows an "expired → Retrain model" state that re-runs training
+  from the stored photos via `/api/models/[id]/retry` (which now accepts
+  `expired`). Requires migration `006_model_expired_status.sql` (adds `expired`
+  to the `models.status` check); the routes degrade gracefully until it's run.
+- **fal note:** the fal LoRA URL (`fal_lora_url`) can also expire on fal's side;
+  that surfaces as a generic error, not `AstriaTuneExpiredError`, and isn't yet
+  given the same retrain treatment.
 
 ## Providers (two engines: Astria FLUX.1 + optional fal FLUX.2)
 A model is **bound to one engine at creation** (`models.provider`, chosen in the

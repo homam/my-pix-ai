@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Sparkles } from "lucide-react";
-import { CREDIT_PACKS, CREDIT_COSTS } from "@/types";
+import { CREDIT_COSTS } from "@/types";
+import { BRAND } from "@/lib/brand";
 import { isStripeConfigured } from "@/lib/stripe";
 import { StripePacks } from "@/components/StripePacks";
 import { DevGrantButton } from "@/components/DevGrantButton";
@@ -14,7 +15,7 @@ export default function PricingPage() {
         <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
           <Link href="/" className="flex items-center gap-2">
             <Sparkles className="w-6 h-6 text-purple-400" />
-            <span className="text-lg font-semibold">MyPix AI</span>
+            <span className="text-lg font-semibold">{BRAND.name}</span>
           </Link>
           <Link
             href="/dashboard"
@@ -44,15 +45,15 @@ export default function PricingPage() {
             </span>
           </div>
 
-          <StripePacks packs={CREDIT_PACKS} />
+          <StripePacks packs={BRAND.packs} />
 
           <p className="text-gray-600 text-sm mt-12">
             Questions?{" "}
             <a
-              href="mailto:hello@mypix.ai"
+              href={`mailto:${BRAND.supportEmail}`}
               className="text-gray-400 hover:text-white"
             >
-              hello@mypix.ai
+              {BRAND.supportEmail}
             </a>
           </p>
         </div>

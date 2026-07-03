@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { ArrowRight, Camera, Sparkles, Zap, Shield, Star } from "lucide-react";
+import { BRAND } from "@/lib/brand";
 
 const SAMPLE_IMAGES = [
   "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=400&h=500&fit=crop",
@@ -25,7 +26,7 @@ export default function LandingPage() {
         <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Sparkles className="w-6 h-6 text-purple-400" />
-            <span className="text-lg font-semibold">MyPix AI</span>
+            <span className="text-lg font-semibold">{BRAND.name}</span>
           </div>
           <div className="flex items-center gap-4">
             <Link
@@ -251,7 +252,7 @@ export default function LandingPage() {
         <div className="max-w-7xl mx-auto px-6 flex flex-col md:flex-row items-center justify-between gap-4 text-sm text-gray-500">
           <div className="flex items-center gap-2">
             <Sparkles className="w-4 h-4 text-purple-400" />
-            <span>MyPix AI</span>
+            <span>{BRAND.name}</span>
           </div>
           <div className="flex gap-6">
             <Link href="/privacy" className="hover:text-gray-300 transition-colors">
@@ -264,7 +265,10 @@ export default function LandingPage() {
               Pricing
             </Link>
           </div>
-          <p>© 2026 MyPix AI. All rights reserved.</p>
+          <p>
+            © {new Date().getFullYear()} {BRAND.legal.companyName}. All rights
+            reserved.
+          </p>
         </div>
       </footer>
     </div>

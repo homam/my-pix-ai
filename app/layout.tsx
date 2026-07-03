@@ -1,14 +1,14 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { Toaster } from "@/components/ui/toaster";
+import { BRAND } from "@/lib/brand";
 
 export const metadata: Metadata = {
-  title: "MyPix AI — AI-Powered Photo Studio",
-  description:
-    "Upload 10–20 photos of yourself and generate stunning photorealistic AI portraits in any setting, outfit, or style.",
+  title: BRAND.metaTitle,
+  description: BRAND.description,
   openGraph: {
-    title: "MyPix AI",
-    description: "Your AI photo studio. Train once, generate forever.",
+    title: BRAND.name,
+    description: BRAND.tagline,
     type: "website",
   },
 };

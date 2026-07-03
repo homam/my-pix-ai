@@ -1,0 +1,12 @@
+node_modules
+.next
+.git
+.vercel
+.env*
+!.env.local.example
+sales-deck
+supabase
+*.md
+.DS_Store
+Dockerfile
+.dockerignore

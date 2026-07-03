@@ -109,7 +109,9 @@ async function getResultByUrl<T>(responseUrl: string): Promise<T> {
 async function waitForFalResult<T>(
   statusUrl: string,
   responseUrl: string,
-  { timeoutMs = 180_000, intervalMs = 3000 }: { timeoutMs?: number; intervalMs?: number } = {}
+  // 100s, not more: App Runner cuts requests at a hard 120s — timing out inside
+  // that window lets the caller's refund path run instead of a severed socket.
+  { timeoutMs = 100_000, intervalMs = 3000 }: { timeoutMs?: number; intervalMs?: number } = {}
 ): Promise<T> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {

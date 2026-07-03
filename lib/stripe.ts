@@ -1,5 +1,5 @@
 import Stripe from "stripe";
-import { CREDIT_PACKS } from "@/types";
+import { BRAND } from "@/lib/brand";
 
 // Stripe is optional. Consumers must check `isStripeConfigured()` first, or
 // handle the `StripeNotConfiguredError` thrown by helpers below.
@@ -34,7 +34,7 @@ export async function createCheckoutSession(
 ): Promise<string> {
   const stripe = getStripe();
 
-  const pack = CREDIT_PACKS.find((p) => p.id === packId);
+  const pack = BRAND.packs.find((p) => p.id === packId);
   if (!pack) throw new Error("Invalid pack");
 
   const priceId = process.env[pack.priceId];

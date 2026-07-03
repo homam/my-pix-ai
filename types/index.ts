@@ -1,4 +1,11 @@
-export type ModelStatus = "pending" | "training" | "ready" | "failed";
+// "expired" = Astria deleted the trained tune's weights (~30 days post-training);
+// the model needs retraining before it can generate again. See lib/astria.ts.
+export type ModelStatus =
+  | "pending"
+  | "training"
+  | "ready"
+  | "failed"
+  | "expired";
 
 export interface Model {
   id: string;
@@ -147,7 +154,9 @@ export interface AstriaPrompt {
   images: string[];
 }
 
-// Credit pack definitions
+// Credit pack shape. The actual packs (retail pricing) are brand-scoped and
+// live in lib/brand.ts (BRAND.packs) — brands may price differently, so
+// there is deliberately no pack constant here.
 export interface CreditPack {
   id: string;
   name: string;
@@ -157,34 +166,6 @@ export interface CreditPack {
   popular?: boolean;
   description: string;
 }
-
-export const CREDIT_PACKS: CreditPack[] = [
-  {
-    id: "starter",
-    name: "Starter",
-    credits: 50,
-    price: 900,
-    priceId: "STRIPE_PRICE_STARTER",
-    description: "1 model + 30 photos",
-  },
-  {
-    id: "pro",
-    name: "Pro",
-    credits: 200,
-    price: 2900,
-    priceId: "STRIPE_PRICE_PRO",
-    popular: true,
-    description: "4 models + 120 photos",
-  },
-  {
-    id: "ultra",
-    name: "Ultra",
-    credits: 500,
-    price: 5900,
-    priceId: "STRIPE_PRICE_ULTRA",
-    description: "10 models + 300 photos",
-  },
-];
 
 // Credit costs
 export const CREDIT_COSTS = {

@@ -16,6 +16,45 @@ function headers() {
   };
 }
 
+/**
+ * Astria deletes a fine-tune — weights, training images, prompts, generated
+ * images — roughly 30 days after training completes, unless the tune was created
+ * with `auto_extend` (a paid add-on, gated behind ASTRIA_AUTO_EXTEND here).
+ * Generating or editing against a deleted tune 422s with
+ * `{"base":["Tune <id> has expired."]}`. We surface that as a typed error so the
+ * generate/edit routes can refund, flag the model for retraining, and return a
+ * clear message instead of leaking the raw provider error to the user.
+ */
+export class AstriaTuneExpiredError extends Error {
+  readonly tuneId: number | null;
+  constructor(tuneId: number | null) {
+    super(
+      tuneId != null
+        ? `Astria tune ${tuneId} has expired`
+        : "Astria tune has expired"
+    );
+    this.name = "AstriaTuneExpiredError";
+    this.tuneId = tuneId;
+  }
+}
+
+// Returns an AstriaTuneExpiredError when the response is the "tune has expired"
+// 422 (pulling the tune id out of the body), or null for any other response.
+function expiredTuneError(
+  status: number,
+  body: string
+): AstriaTuneExpiredError | null {
+  if (status !== 422 || !/has expired/i.test(body)) return null;
+  const m = body.match(/Tune\s+(\d+)\s+has expired/i);
+  return new AstriaTuneExpiredError(m ? Number(m[1]) : null);
+}
+
+// auto_extend keeps a tune from expiring, at an ongoing per-tune cost on the
+// Astria bill. Off by default to preserve the pay-as-you-go cost model; opt in
+// per deployment with ASTRIA_AUTO_EXTEND=true. See CLAUDE.md.
+const autoExtendField = () =>
+  process.env.ASTRIA_AUTO_EXTEND === "true" ? { auto_extend: true } : {};
+
 export interface CreateTuneParams {
   title: string;
   imageUrls: string[];
@@ -36,6 +75,7 @@ export async function createTune(params: CreateTuneParams): Promise<AstriaTune> 
       base_tune_id: FLUX_BASE_TUNE_ID,
       image_urls: imageUrls,
       steps: null,
+      ...autoExtendField(),
       ...(webhookUrl ? { callback: webhookUrl } : {}),
     },
   };
@@ -209,6 +249,8 @@ export async function generateImages(params: GenerateParams): Promise<AstriaProm
 
   if (!res.ok) {
     const text = await res.text();
+    const expired = expiredTuneError(res.status, text);
+    if (expired) throw expired;
     throw new Error(`Astria generateImages failed: ${res.status} ${text}`);
   }
 
@@ -307,6 +349,8 @@ export async function editImage(params: EditImageParams): Promise<AstriaPrompt> 
 
   if (!res.ok) {
     const errText = await res.text();
+    const expired = expiredTuneError(res.status, errText);
+    if (expired) throw expired;
     throw new Error(`Astria editImage failed: ${res.status} ${errText}`);
   }
 
@@ -330,6 +374,7 @@ export async function createGarmentTune(params: {
       model_type: "faceid",
       branch: "flux1",
       image_urls: [params.imageUrl],
+      ...autoExtendField(),
     },
   };
 
@@ -397,7 +442,9 @@ export async function getPrompt(
 export async function waitForPrompt(
   tuneId: number,
   promptId: number,
-  { timeoutMs = 120_000, intervalMs = 3000 }: { timeoutMs?: number; intervalMs?: number } = {}
+  // 100s, not more: App Runner cuts requests at a hard 120s — timing out inside
+  // that window lets the caller's refund path run instead of a severed socket.
+  { timeoutMs = 100_000, intervalMs = 3000 }: { timeoutMs?: number; intervalMs?: number } = {}
 ): Promise<AstriaPrompt> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {

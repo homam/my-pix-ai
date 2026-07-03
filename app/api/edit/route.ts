@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
-import { editImage, waitForPrompt, FLUX_BASE_TUNE_ID } from "@/lib/astria";
+import {
+  editImage,
+  waitForPrompt,
+  FLUX_BASE_TUNE_ID,
+  AstriaTuneExpiredError,
+} from "@/lib/astria";
 import { deductCredits } from "@/lib/credits";
 import { mirrorImageToStorage, storagePathFromUrl } from "@/lib/storage";
 import { makeLogger, errInfo } from "@/lib/log";
@@ -459,6 +464,52 @@ export async function POST(req: NextRequest) {
     });
     return NextResponse.json({ images: inserted ?? [], reqId: log.reqId });
   } catch (err) {
+    // A tune this edit depends on has expired on Astria's side (~30 days post-
+    // training). Depending on the mode that's the person's model (faceswap /
+    // identity-aware inpaint) or the try-on garment — the error carries the tune
+    // id, so match it to one of the user's models and flag that for retraining.
+    if (err instanceof AstriaTuneExpiredError) {
+      log.warn("tune_expired", {
+        userId: user.id,
+        mode: input.mode,
+        tuneId: err.tuneId,
+      });
+      await refund("tune expired");
+      let modelExpired = false;
+      if (err.tuneId != null) {
+        const serviceClient = await createServiceClient();
+        const { data: marked, error: markErr } = await serviceClient
+          .from("models")
+          .update({ status: "expired", updated_at: new Date().toISOString() })
+          .eq("user_id", user.id)
+          .eq("astria_tune_id", err.tuneId)
+          .select("id");
+        if (markErr) {
+          log.error("mark_expired_failed", {
+            userId: user.id,
+            tuneId: err.tuneId,
+            pgMessage: markErr.message,
+          });
+        }
+        modelExpired = !!marked?.length;
+      }
+      return NextResponse.json(
+        {
+          error: modelExpired
+            ? "The model used here has expired — the image provider stores " +
+              "trained models for about 30 days and this one's data was removed. " +
+              "Retrain it to continue. Your credits were refunded."
+            : "A trained asset this edit relies on has expired and was removed " +
+              "by the image provider (kept for about 30 days). Recreate it to " +
+              "continue. Your credits were refunded.",
+          code: "model_expired",
+          tuneId: err.tuneId,
+          reqId: log.reqId,
+        },
+        { status: 409 }
+      );
+    }
+
     const info = errInfo(err);
     log.error("edit_failed", { userId: user.id, mode: input.mode, ...info });
     await refund("edit_failed");

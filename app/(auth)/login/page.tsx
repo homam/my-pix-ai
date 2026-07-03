@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { Sparkles, Loader2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { BRAND } from "@/lib/brand";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -37,7 +38,7 @@ export default function LoginPage() {
       <div className="w-full max-w-sm">
         <Link href="/" className="flex items-center gap-2 justify-center mb-10">
           <Sparkles className="w-6 h-6 text-purple-400" />
-          <span className="text-lg font-semibold">MyPix AI</span>
+          <span className="text-lg font-semibold">{BRAND.name}</span>
         </Link>
 
         {sent ? (

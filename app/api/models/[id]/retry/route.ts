@@ -1,100 +1,230 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
-import { createTune } from "@/lib/astria";
+import { kickoffTraining, type TrainProvider } from "@/lib/training";
+import { isFalConfigured } from "@/lib/fal";
 import { deductCredits } from "@/lib/credits";
-import { listModelImages } from "@/lib/storage";
+import { listModelImages, storagePathFromUrl, STORAGE_BUCKET } from "@/lib/storage";
 import { CREDIT_COSTS, Model } from "@/types";
+import { makeLogger, errInfo } from "@/lib/log";
+import { z } from "zod";
 
+// Retrain can zip + upload photos server-side (fal) and calls a provider, so
+// give it the same headroom as first-time training.
+export const maxDuration = 300;
+
+const schema = z.object({
+  // Engine to (re)train on. Omitted = keep the model's current engine.
+  provider: z.enum(["astria", "fal"]).optional(),
+  // New photo set to train on. Omitted = reuse the model's stored photos.
+  imageUrls: z.array(z.string().url()).min(10).max(40).optional(),
+});
+
+/**
+ * Retrain an existing model. Covers every case the UI offers:
+ *  - recover a failed/expired model (reuse stored photos, same engine)
+ *  - re-roll a ready model (reuse stored photos → a fresh tune)
+ *  - refresh with new photos (imageUrls provided)
+ *  - switch engine (provider provided; Standard ↔ Ultra)
+ * Reuses the same kickoffTraining core as first-time training.
+ */
 export async function POST(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const log = makeLogger("api/models/[id]/retry");
   const { id } = await params;
+
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
 
   if (!user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json(
+      { error: "Unauthorized", reqId: log.reqId },
+      { status: 401 }
+    );
   }
 
-  const { data: model } = await supabase
+  // Tolerate an empty body — the one-click card retrain posts nothing, meaning
+  // "reuse stored photos, same engine".
+  let body: unknown = {};
+  try {
+    body = await req.json();
+  } catch {
+    body = {};
+  }
+  const parsed = schema.safeParse(body);
+  if (!parsed.success) {
+    log.warn("validation_failed", { userId: user.id, issues: parsed.error.flatten() });
+    return NextResponse.json(
+      { error: "Invalid request", details: parsed.error.flatten(), reqId: log.reqId },
+      { status: 400 }
+    );
+  }
+  const { provider: providerOverride, imageUrls: newImageUrls } = parsed.data;
+
+  const { data: modelRow } = await supabase
     .from("models")
     .select("*")
     .eq("id", id)
     .eq("user_id", user.id)
-    .in("status", ["pending", "failed"])
+    // ready = re-roll / switch engine; failed|expired = recover; pending = start.
+    .in("status", ["pending", "failed", "expired", "ready"])
     .single();
 
-  if (!model) {
+  if (!modelRow) {
     return NextResponse.json(
-      { error: "Model not found or already training/ready" },
+      { error: "Model not found or not retrainable", reqId: log.reqId },
       { status: 404 }
     );
   }
+  const model = modelRow as Model;
 
-  const m = model as Model;
-  const imageUrls = await listModelImages(supabase, user.id, id);
+  const previousProvider: TrainProvider = model.provider === "fal" ? "fal" : "astria";
+  const provider: TrainProvider = providerOverride ?? previousProvider;
 
-  if (imageUrls.length < 10) {
+  // Guard engine availability before touching credits.
+  if (provider === "fal" && !isFalConfigured()) {
     return NextResponse.json(
-      { error: `Only ${imageUrls.length} uploaded images found; need at least 10.` },
+      { error: "The Ultra engine is not available on this server", reqId: log.reqId },
       { status: 400 }
     );
   }
+  if (provider === "astria" && !process.env.ASTRIA_API_KEY) {
+    return NextResponse.json(
+      { error: "Server misconfigured: ASTRIA_API_KEY is not set", reqId: log.reqId },
+      { status: 500 }
+    );
+  }
+
+  // Resolve the photos: new set (must live in this user's own storage tree) or
+  // the model's existing stored photos.
+  let imageUrls: string[];
+  if (newImageUrls && newImageUrls.length > 0) {
+    const bad = newImageUrls.find((u) => {
+      const path = storagePathFromUrl(u);
+      return !path || !path.startsWith(`${user.id}/`);
+    });
+    if (bad) {
+      log.warn("disallowed_image_url", { userId: user.id, url: bad });
+      return NextResponse.json(
+        { error: "Image URL not allowed", reqId: log.reqId },
+        { status: 400 }
+      );
+    }
+    imageUrls = newImageUrls;
+  } else {
+    imageUrls = await listModelImages(supabase, user.id, id);
+  }
+
+  if (imageUrls.length < 10) {
+    return NextResponse.json(
+      {
+        error:
+          newImageUrls
+            ? `Only ${imageUrls.length} photos provided; need at least 10.`
+            : `Only ${imageUrls.length} stored photos found; need at least 10. Upload new photos to retrain.`,
+        reqId: log.reqId,
+      },
+      { status: 400 }
+    );
+  }
+
+  log.info("retrain_input", {
+    userId: user.id,
+    modelId: id,
+    fromProvider: previousProvider,
+    toProvider: provider,
+    switching: provider !== previousProvider,
+    newPhotos: Boolean(newImageUrls),
+    imageCount: imageUrls.length,
+    fromStatus: model.status,
+  });
 
   const { success, balance } = await deductCredits(
     supabase,
     user.id,
     "TRAINING",
-    `Train model: ${m.name}`
+    `Retrain model: ${model.name}`
   );
-
   if (!success) {
-    return NextResponse.json({ error: "Insufficient credits" }, { status: 402 });
+    return NextResponse.json(
+      { error: "Insufficient credits", reqId: log.reqId },
+      { status: 402 }
+    );
   }
 
-  try {
-    const publicUrl = process.env.ASTRIA_WEBHOOK_PUBLIC_URL;
-    const webhookUrl = publicUrl
-      ? `${publicUrl}/api/webhooks/astria?secret=${process.env.ASTRIA_WEBHOOK_SECRET}`
-      : undefined;
-
-    const tune = await createTune({
-      title: m.name,
-      imageUrls,
-      webhookUrl,
-    });
-
-    const serviceClient = await createServiceClient();
-    await serviceClient
-      .from("models")
-      .update({
-        status: "training",
-        astria_tune_id: tune.id,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", id);
-
-    await serviceClient.from("model_images").delete().eq("model_id", id);
-    await serviceClient
-      .from("model_images")
-      .insert(imageUrls.map((url) => ({ model_id: id, url })));
-
-    return NextResponse.json({ tuneId: tune.id, balance });
-  } catch (err) {
-    console.error("Retry training failed:", err);
-
-    const serviceClient = await createServiceClient();
-    await serviceClient.rpc("add_credits", {
+  const serviceClient = await createServiceClient();
+  const refund = async (reason: string) => {
+    const { error: refundErr } = await serviceClient.rpc("add_credits", {
       p_user_id: user.id,
       p_amount: CREDIT_COSTS.TRAINING,
       p_stripe_session_id: null,
-      p_description: `Refund for failed training: ${m.name}`,
+      p_description: `Refund (${reason}): ${model.name}`,
     });
+    if (refundErr) {
+      log.error("refund_failed", { userId: user.id, modelId: id, reason, pgMessage: refundErr.message });
+    } else {
+      log.info("credits_refunded", { userId: user.id, modelId: id, reason });
+    }
+  };
 
-    const message = err instanceof Error ? err.message : "Failed to start training";
-    return NextResponse.json({ error: message }, { status: 500 });
+  try {
+    const result = await kickoffTraining({
+      provider,
+      previousProvider,
+      modelId: id,
+      userId: user.id,
+      modelName: model.name,
+      imageUrls,
+      serviceClient,
+      log,
+    });
+    // New photos replace the set: drop the model's previous stored photos
+    // (keeping the just-uploaded ones) so a later "reuse current photos"
+    // retrain trains on the new set only. Best-effort — never fail over it.
+    if (newImageUrls && newImageUrls.length > 0) {
+      try {
+        const keep = new Set(
+          newImageUrls
+            .map((u) => storagePathFromUrl(u))
+            .filter((p): p is string => !!p)
+        );
+        const prefix = `${user.id}/${id}`;
+        const { data: entries } = await serviceClient.storage
+          .from(STORAGE_BUCKET)
+          .list(prefix, { limit: 1000 });
+        const toRemove = (entries ?? [])
+          .filter((e) => e.id && e.name && /\.(jpe?g|png|webp)$/i.test(e.name))
+          .map((e) => `${prefix}/${e.name}`)
+          .filter((p) => !keep.has(p));
+        if (toRemove.length > 0) {
+          await serviceClient.storage.from(STORAGE_BUCKET).remove(toRemove);
+          log.info("retrain_old_photos_removed", {
+            userId: user.id,
+            modelId: id,
+            removed: toRemove.length,
+          });
+        }
+      } catch (err) {
+        log.warn("retrain_photo_cleanup_failed", {
+          userId: user.id,
+          modelId: id,
+          ...errInfo(err),
+        });
+      }
+    }
+
+    log.info("retrain_started", { userId: user.id, modelId: id, provider });
+    return NextResponse.json({ ...result, provider, balance, reqId: log.reqId });
+  } catch (err) {
+    const info = errInfo(err);
+    log.error("retrain_failed", { userId: user.id, modelId: id, provider, ...info });
+    await refund("retrain failed");
+    return NextResponse.json(
+      { error: `Failed to start retraining: ${info.message}`, reqId: log.reqId },
+      { status: 500 }
+    );
   }
 }

@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Sparkles } from "lucide-react";
 import { createServiceClient } from "@/lib/supabase/server";
+import { BRAND, brandUrl } from "@/lib/brand";
 
 // ISR: first hit renders + caches, subsequent within 60s are served from
 // cache, after 60s a background revalidate refreshes. Keeps OG scrapers and
@@ -52,9 +53,7 @@ async function loadShare(
   return { share: share as Share, images: ordered };
 }
 
-const APP_URL = (
-  process.env.NEXT_PUBLIC_APP_URL ?? "https://my-pix.ai"
-).replace(/\/$/, "");
+const APP_URL = brandUrl();
 
 export async function generateMetadata({
   params,
@@ -69,7 +68,7 @@ export async function generateMetadata({
   const promptShort =
     share.prompt.length > 90 ? share.prompt.slice(0, 87).trimEnd() + "…" : share.prompt;
   const title = `AI photo: ${promptShort}`;
-  const description = `${share.prompt}\n\nMade with MyPix AI — train a model on your own photos and generate any scenario.`;
+  const description = `${share.prompt}\n\nMade with ${BRAND.name} — train a model on your own photos and generate any scenario.`;
   const url = `${APP_URL}/s/${slug}`;
   const imageUrl = images[0].url;
 
@@ -80,7 +79,7 @@ export async function generateMetadata({
       title,
       description,
       url,
-      siteName: "MyPix AI",
+      siteName: BRAND.name,
       type: "article",
       images: [
         {
@@ -123,7 +122,7 @@ export default async function SharePage({
       <header className="border-b border-white/10 px-6 py-4 flex items-center justify-between">
         <Link href="/" className="flex items-center gap-2 font-semibold">
           <Sparkles className="w-5 h-5 text-purple-400" />
-          MyPix AI
+          {BRAND.name}
         </Link>
         <Link
           href="/login"
@@ -175,7 +174,7 @@ export default async function SharePage({
             Want photos of yourself like this?
           </h2>
           <p className="text-gray-400 mb-6 max-w-xl mx-auto">
-            Upload 15 selfies, MyPix AI trains a model on your face in ~10
+            Upload 15 selfies, {BRAND.name} trains a model on your face in ~10
             minutes, then generate yourself in any scene, outfit, or style.
           </p>
           <Link
@@ -183,13 +182,13 @@ export default async function SharePage({
             className="inline-flex items-center gap-2 bg-purple-600 hover:bg-purple-500 transition-colors text-white px-6 py-3 rounded-xl font-medium"
           >
             <Sparkles className="w-4 h-4" />
-            Try MyPix AI
+            Try {BRAND.name}
           </Link>
         </section>
       </main>
 
       <footer className="border-t border-white/10 px-6 py-6 text-center text-xs text-gray-600">
-        Made with MyPix AI · {share.view_count.toLocaleString()} views
+        Made with {BRAND.name} · {share.view_count.toLocaleString()} views
       </footer>
     </div>
   );

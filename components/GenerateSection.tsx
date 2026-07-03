@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Sparkles, Loader2, Download, Coins, RefreshCw, ChevronDown, Dice5, Info, X, Share2, Check, Copy, Trash2, ImageDown, Wand2 } from "lucide-react";
 import { Model, GeneratedImage } from "@/types";
+import { BRAND } from "@/lib/brand";
 import { PackPicker } from "./PackPicker";
 
 type RealismPreset = "polished" | "natural" | "documentary";
@@ -1045,7 +1046,7 @@ function ShareResultModal({
 
   async function nativeShare() {
     try {
-      await navigator.share({ url, title: "MyPix AI photo" });
+      await navigator.share({ url, title: `${BRAND.name} photo` });
     } catch {
       // User cancelled — ignore.
     }

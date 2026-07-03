@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
-import { createTune } from "@/lib/astria";
-import { falSubmitTraining, isFalConfigured } from "@/lib/fal";
-import { zipStore } from "@/lib/zip";
-import { STORAGE_BUCKET, getPublicUrl } from "@/lib/storage";
+import { kickoffTraining } from "@/lib/training";
+import { isFalConfigured } from "@/lib/fal";
 import { deductCredits } from "@/lib/credits";
 import { CREDIT_COSTS } from "@/types";
 import { makeLogger, errInfo } from "@/lib/log";
@@ -72,7 +70,8 @@ export async function POST(req: NextRequest) {
     imageCount: imageUrls.length,
   });
 
-  // Verify model ownership and pending status
+  // Verify model ownership and pending status (first training only — retrain
+  // goes through /api/models/[id]/retry).
   const { data: model, error: modelErr } = await supabase
     .from("models")
     .select("*")
@@ -97,6 +96,9 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  // A model is engine-bound at creation; train on that engine.
+  const provider: "astria" | "fal" = model.provider === "fal" ? "fal" : "astria";
+
   // Deduct credits
   const { success, balance } = await deductCredits(
     supabase,
@@ -113,261 +115,72 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  log.info("credits_deducted", { userId: user.id, modelId, balance });
+  log.info("credits_deducted", { userId: user.id, modelId, balance, provider });
 
-  // ------------------------------------------------------------------
-  // FLUX.2 (fal) training path. A model is engine-bound at creation, so we
-  // branch on model.provider. fal ingests a single zip of images: fetch each
-  // photo, pack a store-method zip, host it in our bucket, then submit. The
-  // refresh endpoint polls fal for completion (no webhook needed locally).
-  // Astria (FLUX.1) path continues unchanged below.
-  // ------------------------------------------------------------------
-  if (model.provider === "fal") {
-    const serviceClient = await createServiceClient();
-    const refundFal = async (reason: string) => {
-      const { error: refundErr } = await serviceClient.rpc("add_credits", {
-        p_user_id: user.id,
-        p_amount: CREDIT_COSTS.TRAINING,
-        p_stripe_session_id: null,
-        p_description: `Refund (${reason}): ${modelName}`,
-      });
-      if (refundErr) {
-        log.error("refund_failed", {
-          userId: user.id,
-          modelId,
-          reason,
-          pgMessage: refundErr.message,
-        });
-      } else {
-        log.info("credits_refunded", { userId: user.id, modelId, reason });
-      }
-    };
-
-    if (!isFalConfigured()) {
-      log.error("fal_key_missing", { userId: user.id, modelId });
-      await refundFal("no FAL_KEY");
-      return NextResponse.json(
-        { error: "Server misconfigured: FAL_KEY is not set", reqId: log.reqId },
-        { status: 500 }
-      );
-    }
-
-    try {
-      log.info("fal_zip_start", {
-        userId: user.id,
-        modelId,
-        imageCount: imageUrls.length,
-      });
-      const entries = await Promise.all(
-        imageUrls.map(async (url, i) => {
-          const res = await fetch(url);
-          if (!res.ok) {
-            throw new Error(`fetch training image ${i} failed: ${res.status}`);
-          }
-          const ct = res.headers.get("content-type") ?? "image/jpeg";
-          const ext = ct.includes("png")
-            ? "png"
-            : ct.includes("webp")
-              ? "webp"
-              : "jpg";
-          const data = Buffer.from(await res.arrayBuffer());
-          return { name: `${String(i + 1).padStart(3, "0")}.${ext}`, data };
-        })
-      );
-      const zip = zipStore(entries);
-
-      const zipPath = `${user.id}/${modelId}/training.zip`;
-      const { error: upErr } = await serviceClient.storage
-        .from(STORAGE_BUCKET)
-        .upload(zipPath, zip, {
-          contentType: "application/zip",
-          upsert: true,
-        });
-      if (upErr) throw new Error(`zip upload failed: ${upErr.message}`);
-      const zipUrl = getPublicUrl(serviceClient, zipPath);
-
-      log.info("fal_train_submit", {
-        userId: user.id,
-        modelId,
-        zipBytes: zip.length,
-      });
-      const { requestId } = await falSubmitTraining({ imageDataUrl: zipUrl });
-
-      const { error: updateErr } = await serviceClient
-        .from("models")
-        .update({
-          status: "training",
-          fal_request_id: requestId,
-          name: modelName,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", modelId);
-      if (updateErr) {
-        log.error("model_update_failed", {
-          userId: user.id,
-          modelId,
-          requestId,
-          pgMessage: updateErr.message,
-        });
-      }
-
-      const imageRows = imageUrls.map((url) => ({ model_id: modelId, url }));
-      const { error: imagesErr } = await serviceClient
-        .from("model_images")
-        .insert(imageRows);
-      if (imagesErr) {
-        log.error("model_images_insert_failed", {
-          userId: user.id,
-          modelId,
-          pgMessage: imagesErr.message,
-        });
-      }
-
-      log.info("fal_train_started", { userId: user.id, modelId, requestId });
-      return NextResponse.json({ requestId, balance, reqId: log.reqId });
-    } catch (err) {
-      const info = errInfo(err);
-      log.error("fal_train_failed", {
-        userId: user.id,
-        modelId,
-        modelName,
-        imageCount: imageUrls.length,
-        ...info,
-      });
-      await refundFal("fal training failed");
-      return NextResponse.json(
-        { error: `Failed to start training: ${info.message}`, reqId: log.reqId },
-        { status: 500 }
-      );
-    }
-  }
-
-  const apiKeyPresent = Boolean(process.env.ASTRIA_API_KEY);
-  const publicUrl = process.env.ASTRIA_WEBHOOK_PUBLIC_URL;
-  const webhookSecretPresent = Boolean(process.env.ASTRIA_WEBHOOK_SECRET);
-  log.info("astria_env", {
-    userId: user.id,
-    modelId,
-    apiKeyPresent,
-    publicUrl: publicUrl ?? null,
-    webhookSecretPresent,
-  });
-
-  if (!apiKeyPresent) {
-    log.error("astria_api_key_missing", { userId: user.id, modelId });
-    // Refund credits since we never reached Astria
-    const serviceClient = await createServiceClient();
-    await serviceClient.rpc("add_credits", {
-      p_user_id: user.id,
-      p_amount: CREDIT_COSTS.TRAINING,
-      p_stripe_session_id: null,
-      p_description: `Refund (no API key): ${modelName}`,
-    });
-    return NextResponse.json(
-      {
-        error: "Server misconfigured: ASTRIA_API_KEY is not set",
-        reqId: log.reqId,
-      },
-      { status: 500 }
-    );
-  }
-
-  try {
-    const webhookUrl = publicUrl
-      ? `${publicUrl}/api/webhooks/astria?secret=${process.env.ASTRIA_WEBHOOK_SECRET}`
-      : undefined;
-
-    log.info("astria_create_tune_start", {
-      userId: user.id,
-      modelId,
-      modelName,
-      imageCount: imageUrls.length,
-      webhookConfigured: Boolean(webhookUrl),
-    });
-
-    const tune = await createTune({
-      title: modelName,
-      imageUrls,
-      webhookUrl,
-    });
-
-    log.info("astria_create_tune_success", {
-      userId: user.id,
-      modelId,
-      astriaTuneId: tune.id,
-    });
-
-    // Update model with Astria tune ID and training status
-    const serviceClient = await createServiceClient();
-    const { error: updateErr } = await serviceClient
-      .from("models")
-      .update({
-        status: "training",
-        astria_tune_id: tune.id,
-        name: modelName,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", modelId);
-
-    if (updateErr) {
-      log.error("model_update_failed", {
-        userId: user.id,
-        modelId,
-        astriaTuneId: tune.id,
-        pgCode: updateErr.code,
-        pgMessage: updateErr.message,
-      });
-    }
-
-    const imageRows = imageUrls.map((url) => ({ model_id: modelId, url }));
-    const { error: imagesErr } = await serviceClient
-      .from("model_images")
-      .insert(imageRows);
-
-    if (imagesErr) {
-      log.error("model_images_insert_failed", {
-        userId: user.id,
-        modelId,
-        pgCode: imagesErr.code,
-        pgMessage: imagesErr.message,
-      });
-    }
-
-    return NextResponse.json({ tuneId: tune.id, balance, reqId: log.reqId });
-  } catch (err) {
-    const info = errInfo(err);
-    log.error("astria_create_tune_failed", {
-      userId: user.id,
-      modelId,
-      modelName,
-      imageCount: imageUrls.length,
-      ...info,
-    });
-
-    // Refund credits on failure
-    const serviceClient = await createServiceClient();
+  const serviceClient = await createServiceClient();
+  const refund = async (reason: string) => {
     const { error: refundErr } = await serviceClient.rpc("add_credits", {
       p_user_id: user.id,
       p_amount: CREDIT_COSTS.TRAINING,
       p_stripe_session_id: null,
-      p_description: `Refund for failed training: ${modelName}`,
+      p_description: `Refund (${reason}): ${modelName}`,
     });
     if (refundErr) {
       log.error("refund_failed", {
         userId: user.id,
         modelId,
-        pgCode: refundErr.code,
+        reason,
         pgMessage: refundErr.message,
       });
     } else {
-      log.info("credits_refunded", { userId: user.id, modelId });
+      log.info("credits_refunded", { userId: user.id, modelId, reason });
     }
+  };
 
+  // Guard the engine config before hitting any provider API so we refund cleanly.
+  if (provider === "fal" && !isFalConfigured()) {
+    log.error("fal_key_missing", { userId: user.id, modelId });
+    await refund("no FAL_KEY");
     return NextResponse.json(
-      {
-        error: `Failed to start training: ${info.message}`,
-        reqId: log.reqId,
-      },
+      { error: "Server misconfigured: FAL_KEY is not set", reqId: log.reqId },
+      { status: 500 }
+    );
+  }
+  if (provider === "astria" && !process.env.ASTRIA_API_KEY) {
+    log.error("astria_api_key_missing", { userId: user.id, modelId });
+    await refund("no API key");
+    return NextResponse.json(
+      { error: "Server misconfigured: ASTRIA_API_KEY is not set", reqId: log.reqId },
+      { status: 500 }
+    );
+  }
+
+  try {
+    const result = await kickoffTraining({
+      provider,
+      previousProvider: provider, // fresh model — no engine switch
+      modelId,
+      userId: user.id,
+      modelName,
+      imageUrls,
+      serviceClient,
+      log,
+    });
+    log.info("train_started", { userId: user.id, modelId, provider });
+    return NextResponse.json({ ...result, balance, reqId: log.reqId });
+  } catch (err) {
+    const info = errInfo(err);
+    log.error("train_failed", {
+      userId: user.id,
+      modelId,
+      modelName,
+      provider,
+      imageCount: imageUrls.length,
+      ...info,
+    });
+    await refund("training failed");
+    return NextResponse.json(
+      { error: `Failed to start training: ${info.message}`, reqId: log.reqId },
       { status: 500 }
     );
   }

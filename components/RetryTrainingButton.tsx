@@ -7,9 +7,14 @@ import { Loader2, Play } from "lucide-react";
 export function RetryTrainingButton({
   modelId,
   label = "Start training",
+  size = "default",
+  fullWidth = false,
 }: {
   modelId: string;
   label?: string;
+  // "sm" is the compact variant used on dashboard model cards.
+  size?: "default" | "sm";
+  fullWidth?: boolean;
 }) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
@@ -33,11 +38,13 @@ export function RetryTrainingButton({
   }
 
   return (
-    <div className="flex flex-col items-center gap-3">
+    <div className={`flex flex-col items-center gap-2 ${fullWidth ? "w-full" : ""}`}>
       <button
         onClick={handleClick}
         disabled={loading}
-        className="inline-flex items-center gap-2 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white px-5 py-2.5 rounded-xl text-sm font-medium transition-colors"
+        className={`inline-flex items-center justify-center gap-2 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white rounded-xl font-medium transition-colors ${
+          size === "sm" ? "px-3.5 py-2 text-xs" : "px-5 py-2.5 text-sm"
+        } ${fullWidth ? "w-full" : ""}`}
       >
         {loading ? (
           <Loader2 className="w-4 h-4 animate-spin" />

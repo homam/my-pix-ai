@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { constructWebhookEvent, isStripeConfigured } from "@/lib/stripe";
 import { createServiceClient } from "@/lib/supabase/server";
-import { CREDIT_PACKS } from "@/types";
+import { BRAND } from "@/lib/brand";
 
 export async function POST(req: NextRequest) {
   if (!isStripeConfigured()) {
@@ -35,7 +35,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true });
     }
 
-    const pack = CREDIT_PACKS.find((p) => p.id === packId);
+    const pack = BRAND.packs.find((p) => p.id === packId);
     if (!pack) {
       console.error("Unknown pack ID:", packId);
       return NextResponse.json({ ok: true });

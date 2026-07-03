@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { sendEmail } from "@/lib/email";
 import { CREDIT_COSTS } from "@/types";
+import { BRAND, brandUrl } from "@/lib/brand";
 
 // Astria POSTs to this URL when training completes.
 // Payload: { tune: AstriaTune } with tune.trained_at set on success.
@@ -54,10 +55,10 @@ export async function POST(req: NextRequest) {
     if (userEmail) {
       await sendEmail({
         to: userEmail,
-        subject: `Your AI model "${model.name}" is ready ✨`,
+        subject: `Your ${BRAND.name} model "${model.name}" is ready ✨`,
         html: `
           <p>Great news! Your AI model <strong>${model.name}</strong> has finished training.</p>
-          <p><a href="${process.env.NEXT_PUBLIC_APP_URL}/models/${model.id}">Open your model →</a></p>
+          <p><a href="${brandUrl()}/models/${model.id}">Open your model →</a></p>
         `,
       });
     }
@@ -75,7 +76,7 @@ export async function POST(req: NextRequest) {
         subject: `Training failed for "${model.name}"`,
         html: `
           <p>Unfortunately, training your model <strong>${model.name}</strong> failed. Your credits have been refunded.</p>
-          <p>Please try again or contact support.</p>
+          <p>Please try again or contact us at <a href="mailto:${BRAND.supportEmail}">${BRAND.supportEmail}</a>.</p>
         `,
       });
     }

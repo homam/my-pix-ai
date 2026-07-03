@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { getProvider } from "@/lib/providers";
+import { AstriaTuneExpiredError } from "@/lib/astria";
 import { deductCredits } from "@/lib/credits";
 import { mirrorImageToStorage } from "@/lib/storage";
 import { makeLogger, errInfo } from "@/lib/log";
@@ -482,6 +483,45 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ images: inserted ?? [], reqId: log.reqId });
   } catch (err) {
+    // Astria deleted this model's trained tune (~30 days post-training). Refund,
+    // flag the model so the UI prompts a retrain and we stop burning credits on
+    // a dead tune, and return a clear 409 instead of a raw provider error.
+    if (err instanceof AstriaTuneExpiredError) {
+      log.warn("model_expired", {
+        userId: user.id,
+        modelId,
+        tuneId: err.tuneId ?? model.astria_tune_id,
+      });
+      await refund("model expired");
+      const serviceClient = await createServiceClient();
+      // Best-effort: tolerate an un-migrated DB where 'expired' isn't yet a
+      // valid status — the refund + message below still stand.
+      const { error: markErr } = await serviceClient
+        .from("models")
+        .update({ status: "expired", updated_at: new Date().toISOString() })
+        .eq("id", modelId);
+      if (markErr) {
+        log.error("mark_expired_failed", {
+          userId: user.id,
+          modelId,
+          pgMessage: markErr.message,
+        });
+      }
+      return NextResponse.json(
+        {
+          error:
+            "This model has expired — the image provider stores trained models " +
+            "for about 30 days and this one's data was removed. Retrain it from " +
+            "your uploaded photos to generate again. Your credits for this " +
+            "request were refunded.",
+          code: "model_expired",
+          modelId,
+          reqId: log.reqId,
+        },
+        { status: 409 }
+      );
+    }
+
     const info = errInfo(err);
     log.error("generation_failed", {
       userId: user.id,
