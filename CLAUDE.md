@@ -1,5 +1,7 @@
 # MyPix AI
 
+> **Product tag:** Premium VAS · Original · Brand: **MyPix AI** — pay-as-you-go credit packs ($9/$29/$59), no subscription. Not a rebrand of any sibling in `/products`.
+
 AI photo studio: users upload photos → fine-tune a FLUX.1 LoRA on their likeness → generate photorealistic photos in any scenario.
 
 ## Stack
