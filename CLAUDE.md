@@ -94,6 +94,31 @@ Without these, emails on training-complete / training-failed are logged to the s
 
 ---
 
+## Production deployment (AWS App Runner — canonical)
+
+Production runs on **AWS App Runner**: https://wy7kp3ie3e.eu-central-1.awsapprunner.com
+(account `178269041738`, region `eu-central-1`, service `my-pix-ai`, 1 vCPU / 2 GB).
+
+**To deploy:** `./scripts/deploy.sh` — builds the linux/amd64 Docker image (standalone
+Next.js build; `NEXT_PUBLIC_*` baked in as build args), pushes to ECR
+(`.../my-pix-ai:latest`), and App Runner auto-deploys on push. Secrets
+(`SUPABASE_SERVICE_ROLE_KEY`, `ASTRIA_API_KEY`, `FAL_KEY`, …) are runtime env vars on
+the service, not in the image. `DEV_GRANT_CREDITS=false` in production.
+
+Gotchas encoded in the Dockerfile — don't undo them:
+- App Runner injects its own `HOSTNAME` at runtime, so the CMD forces `HOSTNAME=0.0.0.0`
+  (ENV alone gets overridden and Next.js binds the wrong interface → health-check death).
+- App Runner has a **hard 120s request cap**; Astria/fal inference polling defaults to
+  100s (`lib/astria.ts` / `lib/fal.ts`) so timeouts fail inside the window and refund.
+
+Supabase auth: Site URL is the App Runner domain; redirect allow-list has the App Runner,
+Vercel, and `http://localhost:4871` callbacks.
+
+A legacy Vercel deployment exists at https://my-pix-ai-opal.vercel.app (same Supabase DB)
+but is **frozen — do not deploy to it**; App Runner is the only deploy target.
+
+---
+
 ## How the Astria webhook works (and how we avoid needing it locally)
 
 Astria trains a model asynchronously (~10 min) and normally POSTs to a callback URL on completion. Our app handles this two ways:
