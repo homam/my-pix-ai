@@ -75,7 +75,7 @@ export function AllPhotosGallery({ images: initialImages, models }: Props) {
         <Images className="w-8 h-8 mx-auto mb-3 text-gray-600" />
         <p className="text-gray-400 text-sm">
           No photos yet. Generate some from a model, or try the{" "}
-          <Link href="/studio" className="text-purple-400 hover:text-purple-300">
+          <Link href="/studio" className="text-brand-400 hover:text-brand-300">
             Studio
           </Link>
           .
@@ -94,7 +94,7 @@ export function AllPhotosGallery({ images: initialImages, models }: Props) {
             onClick={() => setFilter("all")}
             className={`px-3 py-1.5 rounded-lg text-xs border transition-colors ${
               filter === "all"
-                ? "bg-purple-500/20 border-purple-500/40 text-purple-200"
+                ? "bg-brand-500/20 border-brand-500/40 text-brand-200"
                 : "border-white/10 text-gray-400 hover:text-white"
             }`}
           >
@@ -111,7 +111,7 @@ export function AllPhotosGallery({ images: initialImages, models }: Props) {
                 onClick={() => setFilter(k)}
                 className={`px-3 py-1.5 rounded-lg text-xs border transition-colors ${
                   filter === k
-                    ? "bg-purple-500/20 border-purple-500/40 text-purple-200"
+                    ? "bg-brand-500/20 border-brand-500/40 text-brand-200"
                     : "border-white/10 text-gray-400 hover:text-white"
                 }`}
               >
@@ -128,7 +128,7 @@ export function AllPhotosGallery({ images: initialImages, models }: Props) {
             key={img.id}
             type="button"
             onClick={() => setDetail(img)}
-            className="group relative rounded-xl overflow-hidden border border-white/10 hover:border-purple-500/40 transition-colors text-left"
+            className="group relative rounded-xl overflow-hidden border border-white/10 hover:border-brand-500/40 transition-colors text-left"
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
@@ -191,7 +191,7 @@ export function AllPhotosGallery({ images: initialImages, models }: Props) {
                 {detail.model_id && (
                   <Link
                     href={`/models/${detail.model_id}`}
-                    className="flex-1 inline-flex items-center justify-center gap-2 bg-purple-600 hover:bg-purple-500 text-white px-4 py-2 rounded-xl text-sm font-medium transition-colors"
+                    className="flex-1 inline-flex items-center justify-center gap-2 bg-brand-600 hover:bg-brand-500 text-white px-4 py-2 rounded-xl text-sm font-medium transition-colors"
                   >
                     Open model
                   </Link>

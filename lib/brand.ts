@@ -1,7 +1,10 @@
-// White-label brand registry. Everything brand-variable — display name, SEO
-// copy, support email, legal entity, retail credit packs — lives here, keyed
-// by NEXT_PUBLIC_BRAND_KEY (see PLATFORM.md: one product, many brands; a
-// deployment picks its brand via this env var). Product economics
+// White-label brand registry. Everything brand-variable *in copy/config* —
+// display name, SEO copy, support email, legal entity, retail credit packs —
+// lives here, keyed by NEXT_PUBLIC_BRAND_KEY (see PLATFORM.md: one product,
+// many brands; a deployment picks its brand via this env var). The rest of
+// the skin lives in three sibling surfaces (see CLAUDE.md "White-label /
+// rebranding"): the --color-brand-* tokens in app/globals.css, the logo in
+// components/brand/Logo.tsx, and the favicon app/icon.svg. Product economics
 // (CREDIT_COSTS) stay in @/types: features belong to the product, so every
 // brand charges the same credits — only the $ packs and skin differ.
 //

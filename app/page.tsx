@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ArrowRight, Camera, Sparkles, Zap, Shield, Star } from "lucide-react";
 import { BRAND } from "@/lib/brand";
+import { Logo } from "@/components/brand/Logo";
 
 const SAMPLE_IMAGES = [
   "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=400&h=500&fit=crop",
@@ -24,10 +25,7 @@ export default function LandingPage() {
       {/* Nav */}
       <nav className="border-b border-white/5 backdrop-blur-sm sticky top-0 z-50 bg-black/50">
         <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Sparkles className="w-6 h-6 text-purple-400" />
-            <span className="text-lg font-semibold">{BRAND.name}</span>
-          </div>
+          <Logo />
           <div className="flex items-center gap-4">
             <Link
               href="/pricing"
@@ -43,7 +41,7 @@ export default function LandingPage() {
             </Link>
             <Link
               href="/login"
-              className="text-sm bg-purple-600 hover:bg-purple-500 text-white px-4 py-2 rounded-lg transition-colors"
+              className="text-sm bg-brand-600 hover:bg-brand-500 text-white px-4 py-2 rounded-lg transition-colors"
             >
               Get started free
             </Link>
@@ -53,7 +51,7 @@ export default function LandingPage() {
 
       {/* Hero */}
       <section className="max-w-7xl mx-auto px-6 pt-24 pb-20 text-center">
-        <div className="inline-flex items-center gap-2 bg-purple-500/10 border border-purple-500/20 rounded-full px-4 py-1.5 text-sm text-purple-300 mb-8">
+        <div className="inline-flex items-center gap-2 bg-brand-500/10 border border-brand-500/20 rounded-full px-4 py-1.5 text-sm text-brand-300 mb-8">
           <Zap className="w-3.5 h-3.5" />
           Powered by state-of-the-art AI photorealism
         </div>
@@ -72,7 +70,7 @@ export default function LandingPage() {
         <div className="flex flex-col sm:flex-row gap-4 justify-center mb-4">
           <Link
             href="/login"
-            className="inline-flex items-center gap-2 bg-purple-600 hover:bg-purple-500 text-white px-8 py-4 rounded-xl text-lg font-medium transition-colors glow"
+            className="inline-flex items-center gap-2 bg-brand-600 hover:bg-brand-500 text-white px-8 py-4 rounded-xl text-lg font-medium transition-colors glow"
           >
             Create your AI model
             <ArrowRight className="w-5 h-5" />
@@ -144,13 +142,13 @@ export default function LandingPage() {
             ].map(({ icon: Icon, step, title, desc }) => (
               <div
                 key={step}
-                className="bg-white/3 border border-white/5 rounded-2xl p-8 hover:border-purple-500/30 transition-colors"
+                className="bg-white/3 border border-white/5 rounded-2xl p-8 hover:border-brand-500/30 transition-colors"
               >
                 <div className="flex items-center gap-3 mb-4">
-                  <div className="w-10 h-10 bg-purple-500/15 rounded-xl flex items-center justify-center">
-                    <Icon className="w-5 h-5 text-purple-400" />
+                  <div className="w-10 h-10 bg-brand-500/15 rounded-xl flex items-center justify-center">
+                    <Icon className="w-5 h-5 text-brand-400" />
                   </div>
-                  <span className="text-sm font-mono text-purple-400">
+                  <span className="text-sm font-mono text-brand-400">
                     {step}
                   </span>
                 </div>
@@ -219,8 +217,8 @@ export default function LandingPage() {
               },
             ].map(({ icon: Icon, title, desc }) => (
               <div key={title} className="flex flex-col items-center">
-                <div className="w-12 h-12 bg-purple-500/15 rounded-2xl flex items-center justify-center mb-4">
-                  <Icon className="w-6 h-6 text-purple-400" />
+                <div className="w-12 h-12 bg-brand-500/15 rounded-2xl flex items-center justify-center mb-4">
+                  <Icon className="w-6 h-6 text-brand-400" />
                 </div>
                 <h3 className="font-semibold mb-2">{title}</h3>
                 <p className="text-gray-400 text-sm leading-relaxed">{desc}</p>
@@ -239,7 +237,7 @@ export default function LandingPage() {
           </h2>
           <Link
             href="/login"
-            className="inline-flex items-center gap-2 bg-purple-600 hover:bg-purple-500 text-white px-10 py-4 rounded-xl text-lg font-medium transition-colors"
+            className="inline-flex items-center gap-2 bg-brand-600 hover:bg-brand-500 text-white px-10 py-4 rounded-xl text-lg font-medium transition-colors"
           >
             Start for free
             <ArrowRight className="w-5 h-5" />
@@ -250,10 +248,7 @@ export default function LandingPage() {
       {/* Footer */}
       <footer className="border-t border-white/5 py-10">
         <div className="max-w-7xl mx-auto px-6 flex flex-col md:flex-row items-center justify-between gap-4 text-sm text-gray-500">
-          <div className="flex items-center gap-2">
-            <Sparkles className="w-4 h-4 text-purple-400" />
-            <span>{BRAND.name}</span>
-          </div>
+          <Logo size="sm" />
           <div className="flex gap-6">
             <Link href="/privacy" className="hover:text-gray-300 transition-colors">
               Privacy

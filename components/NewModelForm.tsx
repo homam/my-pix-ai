@@ -334,16 +334,16 @@ export function NewModelForm({
     <form onSubmit={handleSubmit} className="space-y-6">
       {/* Phase banner */}
       {submitting && (
-        <div className="bg-purple-500/10 border border-purple-500/20 rounded-xl p-4 space-y-3">
+        <div className="bg-brand-500/10 border border-brand-500/20 rounded-xl p-4 space-y-3">
           <div className="flex items-center justify-between text-sm">
-            <span className="font-medium text-purple-200">
+            <span className="font-medium text-brand-200">
               Step {stepNumber} of 3
             </span>
-            <span className="text-xs text-purple-300/70">{stepCopy}</span>
+            <span className="text-xs text-brand-300/70">{stepCopy}</span>
           </div>
           <div className="h-2 bg-white/5 rounded-full overflow-hidden">
             <div
-              className="h-full bg-purple-500 transition-all duration-300 ease-out"
+              className="h-full bg-brand-500 transition-all duration-300 ease-out"
               style={{ width: `${percent}%` }}
             />
           </div>
@@ -362,7 +362,7 @@ export function NewModelForm({
           onChange={(e) => setModelName(e.target.value)}
           placeholder="e.g. My Professional Headshots"
           disabled={submitting}
-          className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition-colors disabled:opacity-50"
+          className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 transition-colors disabled:opacity-50"
         />
       </div>
 
@@ -411,8 +411,8 @@ export function NewModelForm({
           {...getRootProps()}
           className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-colors ${
             isDragActive
-              ? "border-purple-500 bg-purple-500/5"
-              : "border-white/10 hover:border-purple-500/50 hover:bg-white/3"
+              ? "border-brand-500 bg-brand-500/5"
+              : "border-white/10 hover:border-brand-500/50 hover:bg-white/3"
           } ${submitting ? "opacity-50 cursor-not-allowed pointer-events-none" : ""}`}
         >
           <input {...getInputProps()} />
@@ -469,7 +469,7 @@ export function NewModelForm({
         <button
           type="submit"
           disabled={submitting || total < MIN_PHOTOS || !modelName.trim()}
-          className="inline-flex items-center gap-2 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-6 py-3 rounded-xl font-medium transition-colors"
+          className="inline-flex items-center gap-2 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-6 py-3 rounded-xl font-medium transition-colors"
         >
           {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
           {submitting

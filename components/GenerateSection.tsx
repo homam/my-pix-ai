@@ -249,7 +249,7 @@ export function GenerateSection({
               onChange={(e) => setPrompt(e.target.value)}
               placeholder="e.g. Professional headshot in a modern office, business casual attire, warm lighting"
               rows={3}
-              className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition-colors resize-none"
+              className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 transition-colors resize-none"
             />
           </div>
 
@@ -282,7 +282,7 @@ export function GenerateSection({
                   title={opt.hint}
                   className={`px-3 py-1.5 text-sm rounded-lg border transition-colors ${
                     aspectRatio === opt.id
-                      ? "bg-purple-600 border-purple-600 text-white"
+                      ? "bg-brand-600 border-brand-600 text-white"
                       : "bg-white/5 border-white/10 text-gray-400 hover:text-white hover:bg-white/10"
                   }`}
                 >
@@ -306,7 +306,7 @@ export function GenerateSection({
                   onClick={() => setRealism(opt.id)}
                   className={`px-4 py-1.5 text-sm rounded-lg transition-colors ${
                     realism === opt.id
-                      ? "bg-purple-600 text-white"
+                      ? "bg-brand-600 text-white"
                       : "text-gray-400 hover:text-white"
                   }`}
                 >
@@ -326,7 +326,7 @@ export function GenerateSection({
                 type="checkbox"
                 checked={filmGrain}
                 onChange={(e) => setFilmGrain(e.target.checked)}
-                className="mt-1 accent-purple-500"
+                className="mt-1 accent-brand-500"
               />
               <div>
                 <div className="font-medium">Film grain</div>
@@ -359,7 +359,7 @@ export function GenerateSection({
                     type="checkbox"
                     checked={faceCorrect}
                     onChange={(e) => setFaceCorrect(e.target.checked)}
-                    className="mt-1 accent-purple-500"
+                    className="mt-1 accent-brand-500"
                   />
                   <div>
                     <div className="font-medium">Polish face</div>
@@ -375,7 +375,7 @@ export function GenerateSection({
                     type="checkbox"
                     checked={superResolution}
                     onChange={(e) => setSuperResolution(e.target.checked)}
-                    className="mt-1 accent-purple-500"
+                    className="mt-1 accent-brand-500"
                   />
                   <div>
                     <div className="font-medium">Upscale 4×</div>
@@ -391,7 +391,7 @@ export function GenerateSection({
                     type="checkbox"
                     checked={boostLikeness}
                     onChange={(e) => setBoostLikeness(e.target.checked)}
-                    className="mt-1 accent-purple-500"
+                    className="mt-1 accent-brand-500"
                   />
                   <div>
                     <div className="font-medium">Boost likeness</div>
@@ -422,7 +422,7 @@ export function GenerateSection({
                         onClick={() => setColorGrading(value)}
                         className={`px-3 py-1.5 rounded-lg text-xs border transition-colors ${
                           colorGrading === value
-                            ? "bg-purple-500/20 border-purple-500/40 text-purple-200"
+                            ? "bg-brand-500/20 border-brand-500/40 text-brand-200"
                             : "border-white/10 text-gray-400 hover:text-white"
                         }`}
                       >
@@ -438,7 +438,7 @@ export function GenerateSection({
                     checked={variety}
                     onChange={(e) => setVariety(e.target.checked)}
                     disabled={numImages < 2}
-                    className="mt-1 accent-purple-500 disabled:opacity-50"
+                    className="mt-1 accent-brand-500 disabled:opacity-50"
                   />
                   <div className={numImages < 2 ? "opacity-60" : ""}>
                     <div className="font-medium">More variety</div>
@@ -467,7 +467,7 @@ export function GenerateSection({
                       onChange={(e) => setSeed(e.target.value)}
                       placeholder="random"
                       disabled={variety && numImages > 1}
-                      className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-sm font-mono text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 disabled:opacity-50"
+                      className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-sm font-mono text-white placeholder-gray-500 focus:outline-none focus:border-brand-500 disabled:opacity-50"
                     />
                     <button
                       type="button"
@@ -505,7 +505,7 @@ export function GenerateSection({
                 onClick={() => setNumImages(n)}
                 className={`w-9 h-9 rounded-lg text-sm font-medium transition-colors ${
                   numImages === n
-                    ? "bg-purple-600 text-white"
+                    ? "bg-brand-600 text-white"
                     : "bg-white/5 text-gray-400 hover:bg-white/10"
                 }`}
               >
@@ -531,7 +531,7 @@ export function GenerateSection({
             <button
               type="submit"
               disabled={generating || !prompt.trim() || balance < numImages}
-              className="inline-flex items-center gap-2 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-6 py-2.5 rounded-xl text-sm font-medium transition-colors"
+              className="inline-flex items-center gap-2 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-6 py-2.5 rounded-xl text-sm font-medium transition-colors"
             >
               {generating ? (
                 <>
@@ -589,7 +589,7 @@ export function GenerateSection({
                       createShare(ids, first?.prompt ?? "");
                     }}
                     disabled={selectedIds.size === 0 || sharing}
-                    className="inline-flex items-center gap-1.5 bg-purple-600 hover:bg-purple-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm px-3 py-1.5 rounded-lg transition-colors"
+                    className="inline-flex items-center gap-1.5 bg-brand-600 hover:bg-brand-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm px-3 py-1.5 rounded-lg transition-colors"
                   >
                     {sharing ? (
                       <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -699,7 +699,7 @@ function GeneratedImageCard({
       onClick={selectMode ? onToggleSelect : undefined}
       className={`group relative aspect-square rounded-xl overflow-hidden bg-gray-900 ${
         selectMode ? "cursor-pointer" : ""
-      } ${selected ? "ring-2 ring-purple-500" : ""}`}
+      } ${selected ? "ring-2 ring-brand-500" : ""}`}
     >
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
@@ -711,7 +711,7 @@ function GeneratedImageCard({
         <div
           className={`absolute top-2 left-2 w-7 h-7 rounded-full flex items-center justify-center transition-colors ${
             selected
-              ? "bg-purple-600 text-white"
+              ? "bg-brand-600 text-white"
               : "bg-black/50 backdrop-blur-sm border border-white/30 text-transparent"
           }`}
         >
@@ -978,7 +978,7 @@ function ImageDetailModal({
               <button
                 type="button"
                 onClick={onRemix}
-                className="flex-1 inline-flex items-center justify-center gap-2 bg-purple-600 hover:bg-purple-500 text-white px-4 py-2 rounded-xl text-sm font-medium transition-colors"
+                className="flex-1 inline-flex items-center justify-center gap-2 bg-brand-600 hover:bg-brand-500 text-white px-4 py-2 rounded-xl text-sm font-medium transition-colors"
               >
                 <Sparkles className="w-4 h-4" />
                 Remix
@@ -1082,7 +1082,7 @@ function ShareResultModal({
             readOnly
             value={url}
             onFocus={(e) => e.currentTarget.select()}
-            className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm font-mono text-gray-200 focus:outline-none focus:border-purple-500"
+            className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm font-mono text-gray-200 focus:outline-none focus:border-brand-500"
           />
           <button
             type="button"
@@ -1111,7 +1111,7 @@ function ShareResultModal({
             <button
               type="button"
               onClick={nativeShare}
-              className="flex-1 inline-flex items-center justify-center gap-2 bg-purple-600 hover:bg-purple-500 text-white px-4 py-2 rounded-xl text-sm font-medium transition-colors"
+              className="flex-1 inline-flex items-center justify-center gap-2 bg-brand-600 hover:bg-brand-500 text-white px-4 py-2 rounded-xl text-sm font-medium transition-colors"
             >
               <Share2 className="w-4 h-4" />
               Share…

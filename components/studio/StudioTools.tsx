@@ -131,13 +131,13 @@ function SourcePicker({
         {...getRootProps()}
         className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-colors ${
           isDragActive
-            ? "border-purple-500/60 bg-purple-500/5"
+            ? "border-brand-500/60 bg-brand-500/5"
             : "border-white/10 hover:border-white/20"
         }`}
       >
         <input {...getInputProps()} />
         {uploading ? (
-          <Loader2 className="w-6 h-6 mx-auto animate-spin text-purple-400" />
+          <Loader2 className="w-6 h-6 mx-auto animate-spin text-brand-400" />
         ) : (
           <>
             <Upload className="w-6 h-6 mx-auto mb-2 text-gray-500" />
@@ -157,7 +157,7 @@ function SourcePicker({
                 key={img.id}
                 type="button"
                 onClick={() => onSource(img.url, img.id)}
-                className="shrink-0 rounded-lg overflow-hidden border border-white/10 hover:border-purple-500/50 transition-colors"
+                className="shrink-0 rounded-lg overflow-hidden border border-white/10 hover:border-brand-500/50 transition-colors"
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src={img.url} alt="" className="h-20 w-20 object-cover" />
@@ -185,7 +185,7 @@ function ModelSelect({
     <select
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-purple-500/50"
+      className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-brand-500/50"
     >
       {allowNone && <option value="">No model (generic fill)</option>}
       {models.map((m) => (
@@ -239,7 +239,7 @@ function SubmitButton({
     <button
       type="submit"
       disabled={disabled || busy}
-      className="flex items-center justify-center gap-2 w-full bg-purple-600 hover:bg-purple-500 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-xl px-4 py-3 text-sm font-medium transition-colors"
+      className="flex items-center justify-center gap-2 w-full bg-brand-600 hover:bg-brand-500 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-xl px-4 py-3 text-sm font-medium transition-colors"
     >
       {busy ? (
         <>
@@ -249,7 +249,7 @@ function SubmitButton({
       ) : (
         <>
           {label}
-          <span className="text-purple-200/80">
+          <span className="text-brand-200/80">
             · {cost} credit{cost === 1 ? "" : "s"}
           </span>
         </>
@@ -466,7 +466,7 @@ export function StudioTools({
             onClick={() => switchTool(id)}
             className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm border transition-colors ${
               tool === id
-                ? "bg-purple-500/15 border-purple-500/40 text-purple-200"
+                ? "bg-brand-500/15 border-brand-500/40 text-brand-200"
                 : "border-white/10 text-gray-400 hover:text-white hover:bg-white/5"
             }`}
           >
@@ -549,7 +549,7 @@ export function StudioTools({
                       onClick={() => g.status === "ready" && setGarmentId(g.id)}
                       className={`shrink-0 rounded-lg overflow-hidden border-2 transition-colors relative ${
                         garmentId === g.id
-                          ? "border-purple-500"
+                          ? "border-brand-500"
                           : "border-white/10 hover:border-white/30"
                       } ${g.status !== "ready" ? "opacity-50" : ""}`}
                       title={g.title}
@@ -581,19 +581,19 @@ export function StudioTools({
                 value={garmentTitle}
                 onChange={(e) => setGarmentTitle(e.target.value)}
                 placeholder="Garment name, e.g. red summer dress"
-                className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-purple-500/50"
+                className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-brand-500/50"
               />
               <div
                 {...garmentDropzone.getRootProps()}
                 className={`border-2 border-dashed rounded-xl p-5 text-center cursor-pointer transition-colors ${
                   garmentDropzone.isDragActive
-                    ? "border-purple-500/60 bg-purple-500/5"
+                    ? "border-brand-500/60 bg-brand-500/5"
                     : "border-white/10 hover:border-white/20"
                 }`}
               >
                 <input {...garmentDropzone.getInputProps()} />
                 {garmentUploading ? (
-                  <Loader2 className="w-5 h-5 mx-auto animate-spin text-purple-400" />
+                  <Loader2 className="w-5 h-5 mx-auto animate-spin text-brand-400" />
                 ) : (
                   <p className="text-xs text-gray-500">
                     Drop a garment photo here
@@ -629,7 +629,7 @@ export function StudioTools({
                       ? "e.g. walking through Paris at golden hour"
                       : "e.g. smiling, golden hour light"
               }
-              className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-purple-500/50"
+              className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-brand-500/50"
             />
           </div>
         )}
@@ -642,7 +642,7 @@ export function StudioTools({
                 type="checkbox"
                 checked={colorize}
                 onChange={(e) => setColorize(e.target.checked)}
-                className="accent-purple-500"
+                className="accent-brand-500"
               />
               Colorize black &amp; white photos
             </label>
@@ -657,7 +657,7 @@ export function StudioTools({
                   onClick={() => setOutpaintRatio(r)}
                   className={`px-3 py-1.5 rounded-lg text-xs border transition-colors ${
                     outpaintRatio === r
-                      ? "bg-purple-500/20 border-purple-500/40 text-purple-200"
+                      ? "bg-brand-500/20 border-brand-500/40 text-brand-200"
                       : "border-white/10 text-gray-400 hover:text-white"
                   }`}
                 >
@@ -676,7 +676,7 @@ export function StudioTools({
                   onClick={() => setNumImages(n)}
                   className={`px-3 py-1.5 rounded-lg text-xs border transition-colors ${
                     numImages === n
-                      ? "bg-purple-500/20 border-purple-500/40 text-purple-200"
+                      ? "bg-brand-500/20 border-brand-500/40 text-brand-200"
                       : "border-white/10 text-gray-400 hover:text-white"
                   }`}
                 >

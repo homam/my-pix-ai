@@ -42,7 +42,7 @@ export function RetryTrainingButton({
       <button
         onClick={handleClick}
         disabled={loading}
-        className={`inline-flex items-center justify-center gap-2 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white rounded-xl font-medium transition-colors ${
+        className={`inline-flex items-center justify-center gap-2 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 text-white rounded-xl font-medium transition-colors ${
           size === "sm" ? "px-3.5 py-2 text-xs" : "px-5 py-2.5 text-sm"
         } ${fullWidth ? "w-full" : ""}`}
       >

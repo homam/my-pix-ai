@@ -219,8 +219,8 @@ export function RetrainPanel({
             {...getRootProps()}
             className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors ${
               isDragActive
-                ? "border-purple-500 bg-purple-500/5"
-                : "border-white/10 hover:border-purple-500/50 hover:bg-white/3"
+                ? "border-brand-500 bg-brand-500/5"
+                : "border-white/10 hover:border-brand-500/50 hover:bg-white/3"
             } ${submitting ? "opacity-50 pointer-events-none" : ""}`}
           >
             <input {...getInputProps()} />
@@ -277,7 +277,7 @@ export function RetrainPanel({
           type="button"
           onClick={handleSubmit}
           disabled={!canSubmit}
-          className="inline-flex items-center gap-2 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-5 py-2.5 rounded-xl text-sm font-medium transition-colors"
+          className="inline-flex items-center gap-2 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-5 py-2.5 rounded-xl text-sm font-medium transition-colors"
         >
           {submitting ? (
             <Loader2 className="w-4 h-4 animate-spin" />
@@ -318,16 +318,16 @@ function SourceRadio({
       aria-pressed={checked}
       className={`w-full text-left rounded-xl border p-3 flex items-start gap-3 transition-colors disabled:cursor-not-allowed ${
         checked
-          ? "border-purple-500 bg-purple-500/10"
-          : "border-white/10 hover:border-purple-500/40 hover:bg-white/3"
+          ? "border-brand-500 bg-brand-500/10"
+          : "border-white/10 hover:border-brand-500/40 hover:bg-white/3"
       } ${disabled && !checked ? "opacity-50" : ""}`}
     >
       <span
         className={`mt-0.5 w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${
-          checked ? "border-purple-400" : "border-gray-500"
+          checked ? "border-brand-400" : "border-gray-500"
         }`}
       >
-        {checked && <span className="w-2 h-2 rounded-full bg-purple-400" />}
+        {checked && <span className="w-2 h-2 rounded-full bg-brand-400" />}
       </span>
       <span className="min-w-0">
         <span className="block text-sm font-medium text-white">{title}</span>

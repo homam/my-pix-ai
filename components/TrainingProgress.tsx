@@ -100,7 +100,7 @@ export function TrainingProgress({
       <div className="space-y-2">
         <div className="h-2 bg-white/5 rounded-full overflow-hidden">
           <div
-            className="h-full bg-gradient-to-r from-blue-500 to-purple-500 transition-[width] duration-1000 ease-out"
+            className="h-full bg-gradient-to-r from-blue-500 to-brand-500 transition-[width] duration-1000 ease-out"
             style={{ width: `${percent}%` }}
           />
         </div>

@@ -1,6 +1,10 @@
 # MyPix AI
 
 > **Product tag:** Premium VAS · Original · Brand: **MyPix AI** — pay-as-you-go credit packs ($9/$29/$59), no subscription. Not a rebrand of any sibling in `/products`.
+>
+> **aionized platform status:** fully cut over (2026-07-04) to the shared platform project (same one `product-image-tools`/Pixby uses — see its [docs/PLATFORM.md](../product-image-tools/docs/PLATFORM.md)), registered as product/brand `mypix`. `lib/supabase/client.ts` and `server.ts` construct every client with `db: { schema: 'mypix' }`, so all existing `.from('models')`/`.from('generated_images')`/etc. calls resolve to `mypix.*` unchanged. `lib/credits.ts` now wraps `@aionized/platform-client` (`core.wallets`/`spend_credits`/`grant_credits`, brand-scoped) instead of the old `public.user_credits`/`add_credits`/`deduct_credits` — same exported function signatures (`getBalance`/`deductCredits`/`addCredits`), so callers didn't need to change. The old standalone project (`ewpqjvpejzomijulugth`) is **paused** (not deleted — kept as a safety net) and no longer used (it had 0 real users — dev/test data only). `starter_credits` for `mypix` is `0` in `core.products` (no free tier in the real pricing model; the old project's "1000 dev-mode" grant was never production-real). `.env.local` updated to point at the shared project with a real `SUPABASE_SERVICE_ROLE_KEY`.
+>
+> **Deployed** on AWS App Runner (`eu-central-1`, not the `ap-northeast-1`/Tokyo some other docs assume) at `https://wy7kp3ie3e.eu-central-1.awsapprunner.com` — redeployed 2026-07-04 via `scripts/deploy.sh` with the new project's build args, plus a separate `aws apprunner update-service` call to repoint the service's runtime `SUPABASE_SERVICE_ROLE_KEY`/`NEXT_PUBLIC_SUPABASE_URL`/`NEXT_PUBLIC_SUPABASE_ANON_KEY` (the service was live and pointing at the old project in between the schema migration and this redeploy — briefly broken in prod). `@aionized/platform-client` is consumed via a vendored tarball (`vendor/`) — see `../platform-client/README.md`.
 
 AI photo studio: users upload photos → fine-tune a FLUX.1 LoRA on their likeness → generate photorealistic photos in any scenario.
 
@@ -18,40 +22,74 @@ Cloudflare R2 is **not** used — photo storage is Supabase Storage. Stripe and 
 
 ## White-label / rebranding
 
-The app is brand-agnostic: **everything brand-variable lives in `lib/brand.ts`**, selected per
-deployment by `NEXT_PUBLIC_BRAND_KEY` (unset = `mypix`). This is the same one-product-many-brands
-model as `product-image-tools/docs/PLATFORM.md` — the key is meant to match `core.brands.key`
-if/when this app moves onto the shared platform Supabase.
+This codebase redeploys under a different brand (name, copy, legal entity, logo, favicon, colors)
+without code forks — the same one-product-many-brands model as
+`product-image-tools/docs/PLATFORM.md`. Features and credit costs are product-scoped and
+identical across brands; identity is brand-scoped. At the shared five-dimension rebrand standard
+(2026-07-04) used by the "Rebranding / white-labeling" sections in the `product-pdf-tools`,
+`product-image-tools`, and `ai-all-in-one-chat` READMEs.
 
-A `BrandConfig` holds: display name, `<title>`/meta/OG copy, canonical production URL, support
-email, legal entity (company name, optional address + jurisdiction, © since-year), and the **retail
-credit packs** (names, credits, $ prices). `/terms` and `/privacy` render from the same config.
+A rebrand touches five places:
+
+1. **`lib/brand.ts`** — add a `BrandConfig` entry: display name, `<title>`/meta/OG copy,
+   canonical production URL, support email, legal entity (company name, optional address +
+   jurisdiction, © since-year), and the **retail credit packs** (names, credits, $ prices).
+   `/terms` and `/privacy` render from the same config. An unknown key fails the build loudly.
+2. **Env** — deploy with `NEXT_PUBLIC_BRAND_KEY=<key>` (unset = `mypix`; must match a
+   `core.brands` row on the shared platform project — one INSERT, see PLATFORM.md "Onboard a NEW
+   BRAND"), the brand's domain in `NEXT_PUBLIC_APP_URL`, its own `STRIPE_PRICE_*` / `STRIPE_*`
+   keys and `RESEND_FROM_EMAIL`.
+3. **`app/globals.css`** — the `--color-brand-200…600` scale plus the `--color-brand-2-*`
+   gradient partner in the `@theme` block drive every accent, button, badge, and gradient.
+   Components use `brand-*` utilities (`bg-brand-600`, `text-brand-400`, `border-brand-500/40`,
+   …), never raw palette classes; the semantic tokens (`--color-primary` / `--color-accent` /
+   `--color-ring`), `.gradient-text`, `.glow`, `.legal-prose`, and the studio mask tint (read at
+   runtime in `components/studio/MaskCanvas.tsx`) all derive from the scale.
+4. **`app/icon.svg`** — the favicon (gradient tile + sparkle mark, auto-served by the App
+   Router). SVG can't read the CSS theme, so keep its two hardcoded gradient stops in sync with
+   the brand tokens.
+5. **`components/brand/Logo.tsx`** — the mark + wordmark (`Logo`, with `LogoMark` for the icon
+   alone); the wordmark text comes from `BRAND`. Swap the mark or layout here once; every
+   header/footer call site picks it up. (Remaining `Sparkles` icons elsewhere are decorative
+   feature/button icons, not logos.)
+
 Product economics stay brand-independent by design (`CREDIT_COSTS` in `types/index.ts` — features
 belong to the product, per PLATFORM.md), and Stripe **price IDs stay per-deployment env vars**
-(`STRIPE_PRICE_*`), so each brand deployment points at its own Stripe prices.
+(`STRIPE_PRICE_*`), so each brand deployment points at its own Stripe prices. Never hardcode the
+brand name, support email, pack prices, legal entity, accent color, or logo mark in components —
+import `BRAND` (and `brandUrl()`) from `lib/brand.ts`, use `brand-*` utilities, render `<Logo />`.
 
-**To launch a rebrand:** (1) add a `BrandConfig` entry in `lib/brand.ts`; (2) deploy the same code
-with `NEXT_PUBLIC_BRAND_KEY=<key>`, that brand's domain in `NEXT_PUBLIC_APP_URL`, its own
-`STRIPE_PRICE_*` / `STRIPE_*` keys and `RESEND_FROM_EMAIL`; (3) done — no code changes. An unknown
-key fails the build loudly. Never hardcode the brand name, support email, pack prices, or legal
-entity in components — import `BRAND` (and `brandUrl()`) from `lib/brand.ts`.
+**Auth & payments are brand-scoped capabilities** (decided 2026-07-04, not yet implemented):
+brands of this product may support *different* login methods (magic link, username/password,
+magic token, …) and *different* payment rails (Stripe, DCB, …). Features stay product-scoped;
+how a user gets in and pays belongs to the brand. When implementing, follow the
+declare/enable/enforce pattern in `product-image-tools/docs/PLATFORM.md` §9: `BrandConfig`
+declares `auth.methods` + `payments.providers`, env vars enable them per deployment
+(declared-but-unconfigured fails the build loudly), and auth/payment routes reject
+non-declared methods **server-side** — hiding a login button is not the boundary.
 
-Not brand-scoped yet (acceptable for now, flagged for later): the purple/pink Tailwind palette,
-the Sparkles logo mark, landing-page marketing copy beyond name/tagline, and each brand still
-shares one Supabase project + Astria account per deployment.
+Not brand-scoped yet (acceptable for now, flagged for later): landing-page marketing copy beyond
+name/tagline (`app/page.tsx` hero/features/scenario chips), and each brand still shares one
+Supabase project + Astria account per deployment. (The palette, logo mark, and favicon are
+brand-scoped as of 2026-07-04 — items 3–5 above.)
 
 ---
 
 ## Local dev setup
 
-### 1. Supabase project (free tier works)
-- Create a project at [supabase.com](https://supabase.com)
-- In **SQL Editor**, paste and run `supabase/migrations/001_initial.sql`. This creates all tables, RLS policies, the `user-uploads` Storage bucket, and the `add_credits` / `deduct_credits` RPCs.
-- In **Project Settings → API**, grab:
-  - Project URL → `NEXT_PUBLIC_SUPABASE_URL`
-  - anon/public key → `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-  - service_role key → `SUPABASE_SERVICE_ROLE_KEY`
-- In **Authentication → URL Configuration**, add `http://localhost:4871/auth/callback` to the list of allowed redirect URLs.
+### 1. Supabase project
+**As of 2026-07-04, do NOT create a fresh standalone Supabase project for this.** This app runs
+on the shared aionized platform project ("aionized-platform" in the dashboard, ref
+`jrzaobtnunduxkzkgtbx`) — the same one `product-image-tools`/Pixby, `product-pdf-tools`, and
+`ai-all-in-one-chat`/Hearth use. `supabase/migrations/001_initial.sql` and friends in this repo
+describe the **old, retired** standalone schema (kept for history, not applied anywhere live) —
+the real schema for this product now lives in `product-image-tools/supabase/migrations/0009_onboard_mypix_schema.sql`
+(`mypix.*` tables) plus the shared `core.*` schema for wallets/credits. See
+`product-image-tools/docs/PLATFORM.md` for the full contract.
+- `.env.local` already has the correct `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY` /
+  `SUPABASE_SERVICE_ROLE_KEY` for the shared project — copy from there, don't regenerate from a new project.
+- In **Authentication → URL Configuration** (on the shared project), add
+  `http://localhost:4871/auth/callback` to the list of allowed redirect URLs if it's not already there.
 
 ### 2. Astria.ai API key
 - Sign up at [astria.ai](https://astria.ai) and create an API key.
@@ -70,7 +108,7 @@ npm install
 npm run dev
 ```
 
-App is at [http://localhost:4871](http://localhost:4871). Sign up with any email → click magic link → you start with 1000 credits (training costs 20, generation costs 1 per image). Need more? Visit `/pricing` and click **Grant me 500 credits**.
+App is at [http://localhost:4871](http://localhost:4871). Sign up with any email → click magic link → **you start with 0 credits** (training costs 20, generation costs 1 per image — no free tier in the real pricing model, see `core.products.mypix.starter_credits` in the shared platform). Need credits for local testing? Visit `/pricing` and click **Grant me 500 credits** (dev-only endpoint, `app/api/dev/grant-credits`).
 
 ### Optional: enable Stripe checkout
 1. Create products + prices in Stripe dashboard (Starter/Pro/Ultra).
@@ -179,7 +217,9 @@ Either way, polling remains as a fallback — webhooks can be lost, so you alway
 ---
 
 ## Credit economics
-- New users get 1000 free credits (dev mode generosity).
+- New users get **0** free credits (updated 2026-07-04 — no free tier in the real pricing model;
+  `core.products.mypix.starter_credits = 0` in the shared platform. The old standalone project's
+  "1000 dev-mode" auto-grant was retired along with that project).
 - Training: 20 credits. Generation: 1 credit per image.
 - `/pricing` grants 500 credits per click (dev only — disable in prod with `DEV_GRANT_CREDITS=false`).
 
@@ -187,6 +227,9 @@ Either way, polling remains as a fallback — webhooks can be lost, so you alway
 
 ## Key files
 - `lib/brand.ts` — white-label brand registry (name, SEO copy, support email, legal entity, credit packs); selected by `NEXT_PUBLIC_BRAND_KEY`
+- `components/brand/Logo.tsx` — swappable brand mark + wordmark (all header/footer logos render this)
+- `app/icon.svg` — per-brand favicon (gradient tile + sparkle mark; hexes mirror the brand tokens)
+- `app/globals.css` — `--color-brand-*` accent scale in `@theme`; components use `brand-*` utilities, never raw palette classes
 - `lib/astria.ts` — Astria API client (createTune, generateImages, editImage, createGarmentTune, getTune); throws `AstriaTuneExpiredError` on expired-tune 422s
 - `lib/training.ts` — shared `kickoffTraining()` (engine-branched training kickoff) used by both `/api/train` and the retry route
 - `app/api/models/[id]/retry/route.ts` — retrain: re-roll / switch engine / new photos
@@ -196,13 +239,13 @@ Either way, polling remains as a fallback — webhooks can be lost, so you alway
 - `components/studio/StudioTools.tsx` — studio UI (tool tabs, uploads, mask editor, garment manager)
 - `app/(dashboard)/photos/page.tsx` — "All photos" library across all models + studio edits (filter by `kind`)
 - `lib/storage.ts` — Supabase Storage signed upload URLs
-- `lib/credits.ts` — deductCredits / addCredits (wraps Supabase RPCs)
+- `lib/credits.ts` — getBalance / deductCredits / addCredits, wraps `@aionized/platform-client`'s `core.wallets` RPCs (brand `mypix`) — not raw Supabase RPCs directly, since 2026-07-04
 - `app/api/webhooks/astria/route.ts` — training completion webhook (for when you set up ngrok / deploy)
 - `app/api/models/[id]/refresh/route.ts` — polling fallback
 - `components/NewModelForm.tsx` — photo upload + training kickoff
 - `components/GenerateSection.tsx` — prompt input + image gallery
 - `components/TrainingProgress.tsx` — auto-refreshing training state UI
-- `supabase/migrations/001_initial.sql` — full schema + Storage bucket + RPCs
+- `supabase/migrations/001_initial.sql` (and friends) — **retired**, describes the old standalone project's schema; not applied anywhere live. Current schema: `product-image-tools/supabase/migrations/0009_onboard_mypix_schema.sql` (`mypix.*`) + shared `core.*`
 
 ---
 

@@ -28,18 +28,18 @@ export function EngineOption({
       aria-pressed={selected}
       className={`text-left rounded-xl border p-4 transition-colors disabled:cursor-not-allowed ${
         selected
-          ? "border-purple-500 bg-purple-500/10"
-          : "border-white/10 hover:border-purple-500/40 hover:bg-white/3"
+          ? "border-brand-500 bg-brand-500/10"
+          : "border-white/10 hover:border-brand-500/40 hover:bg-white/3"
       } ${disabled && !selected ? "opacity-50" : ""}`}
     >
       <div className="flex items-center gap-2 mb-1">
         <span className="text-sm font-medium text-white">{title}</span>
         {badge && (
-          <span className="text-[10px] uppercase tracking-wide bg-purple-500/20 text-purple-200 rounded px-1.5 py-0.5">
+          <span className="text-[10px] uppercase tracking-wide bg-brand-500/20 text-brand-200 rounded px-1.5 py-0.5">
             {badge}
           </span>
         )}
-        {selected && <CheckCircle className="w-4 h-4 text-purple-300 ml-auto" />}
+        {selected && <CheckCircle className="w-4 h-4 text-brand-300 ml-auto" />}
       </div>
       <p className="text-xs text-gray-400 leading-snug">{subtitle}</p>
     </button>

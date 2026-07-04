@@ -129,7 +129,7 @@ export function PackPicker({
               type="button"
               onClick={() => setPending(pack)}
               disabled={disabled}
-              className="text-left bg-white/5 border border-white/10 rounded-xl p-4 hover:border-purple-500/40 hover:bg-white/8 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="text-left bg-white/5 border border-white/10 rounded-xl p-4 hover:border-brand-500/40 hover:bg-white/8 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <div className="flex items-center gap-2 mb-1">
                 <span className="text-lg">{pack.emoji}</span>
@@ -142,7 +142,7 @@ export function PackPicker({
                   {cost} credits · {packImageCount(pack)} photos
                 </span>
                 {isThisRunning && progress && (
-                  <span className="inline-flex items-center gap-1 text-purple-300">
+                  <span className="inline-flex items-center gap-1 text-brand-300">
                     <Loader2 className="w-3.5 h-3.5 animate-spin" />
                     {progress.done}/{progress.total}
                   </span>
@@ -217,7 +217,7 @@ function ConfirmPackModal({
           <button
             type="button"
             onClick={onConfirm}
-            className="flex-1 inline-flex items-center justify-center gap-2 bg-purple-600 hover:bg-purple-500 text-white px-4 py-2.5 rounded-xl text-sm font-medium transition-colors"
+            className="flex-1 inline-flex items-center justify-center gap-2 bg-brand-600 hover:bg-brand-500 text-white px-4 py-2.5 rounded-xl text-sm font-medium transition-colors"
           >
             <Sparkles className="w-4 h-4" />
             Generate pack

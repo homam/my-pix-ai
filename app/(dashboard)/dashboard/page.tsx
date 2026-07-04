@@ -52,7 +52,7 @@ export default async function DashboardPage({
         </div>
         <Link
           href="/models/new"
-          className="inline-flex items-center gap-2 bg-purple-600 hover:bg-purple-500 text-white px-4 py-2.5 rounded-xl text-sm font-medium transition-colors"
+          className="inline-flex items-center gap-2 bg-brand-600 hover:bg-brand-500 text-white px-4 py-2.5 rounded-xl text-sm font-medium transition-colors"
         >
           <Plus className="w-4 h-4" />
           New model
@@ -61,8 +61,8 @@ export default async function DashboardPage({
 
       {modelList.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-24 text-center">
-          <div className="w-16 h-16 bg-purple-500/10 rounded-2xl flex items-center justify-center mb-4">
-            <Sparkles className="w-8 h-8 text-purple-400" />
+          <div className="w-16 h-16 bg-brand-500/10 rounded-2xl flex items-center justify-center mb-4">
+            <Sparkles className="w-8 h-8 text-brand-400" />
           </div>
           <h2 className="text-xl font-semibold mb-2">No models yet</h2>
           <p className="text-gray-400 text-sm mb-6 max-w-sm">
@@ -71,7 +71,7 @@ export default async function DashboardPage({
           </p>
           <Link
             href="/models/new"
-            className="inline-flex items-center gap-2 bg-purple-600 hover:bg-purple-500 text-white px-6 py-3 rounded-xl font-medium transition-colors"
+            className="inline-flex items-center gap-2 bg-brand-600 hover:bg-brand-500 text-white px-6 py-3 rounded-xl font-medium transition-colors"
           >
             <Plus className="w-4 h-4" />
             Create your first model

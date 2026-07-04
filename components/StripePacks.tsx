@@ -45,12 +45,12 @@ export function StripePacks({ packs }: { packs: CreditPack[] }) {
               key={pack.id}
               className={`relative rounded-2xl p-8 border text-left ${
                 pack.popular
-                  ? "border-purple-500 bg-purple-500/5"
+                  ? "border-brand-500 bg-brand-500/5"
                   : "border-white/10 bg-white/3"
               }`}
             >
               {pack.popular && (
-                <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 bg-purple-600 text-white text-xs font-medium px-3 py-1 rounded-full">
+                <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 bg-brand-600 text-white text-xs font-medium px-3 py-1 rounded-full">
                   Most popular
                 </div>
               )}
@@ -75,7 +75,7 @@ export function StripePacks({ packs }: { packs: CreditPack[] }) {
                   "Credits never expire",
                 ].map((feature) => (
                   <li key={feature} className="flex items-start gap-2 text-sm">
-                    <Check className="w-4 h-4 text-purple-400 mt-0.5 shrink-0" />
+                    <Check className="w-4 h-4 text-brand-400 mt-0.5 shrink-0" />
                     <span className="text-gray-300">{feature}</span>
                   </li>
                 ))}
@@ -86,7 +86,7 @@ export function StripePacks({ packs }: { packs: CreditPack[] }) {
                 disabled={loadingId !== null}
                 className={`w-full inline-flex items-center justify-center gap-2 py-3 px-6 rounded-xl font-medium transition-colors disabled:opacity-50 ${
                   pack.popular
-                    ? "bg-purple-600 hover:bg-purple-500 text-white"
+                    ? "bg-brand-600 hover:bg-brand-500 text-white"
                     : "bg-white/10 hover:bg-white/15 text-white"
                 }`}
               >

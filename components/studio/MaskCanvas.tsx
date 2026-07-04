@@ -10,6 +10,25 @@ interface Props {
   onMaskChange: (mask: Blob | null) => void;
 }
 
+// Canvas can't use CSS classes, so the tint reads the brand accent token
+// (--color-brand-500, app/globals.css) at runtime and follows a rebrand.
+let tintCache: [number, number, number] | null = null;
+function brandTint(): [number, number, number] {
+  if (tintCache) return tintCache;
+  const raw = getComputedStyle(document.documentElement)
+    .getPropertyValue("--color-brand-500")
+    .trim();
+  const m = /^#([0-9a-f]{6})$/i.exec(raw);
+  tintCache = m
+    ? [
+        parseInt(m[1].slice(0, 2), 16),
+        parseInt(m[1].slice(2, 4), 16),
+        parseInt(m[1].slice(4, 6), 16),
+      ]
+    : [168, 85, 247];
+  return tintCache;
+}
+
 /**
  * Paint-over mask editor. The user brushes over the areas to replace;
  * we keep a full-resolution offscreen mask canvas (black background,
@@ -56,7 +75,7 @@ export function MaskCanvas({ imageUrl, onMaskChange }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [imageUrl]);
 
-  // Redraws the visible canvas: source image + purple tint wherever the
+  // Redraws the visible canvas: source image + brand tint wherever the
   // full-res mask is white. The mask canvas is the single source of truth;
   // the tint is re-derived from it by thresholding luminance per pixel.
   const redrawAccurate = useCallback(() => {
@@ -75,11 +94,12 @@ export function MaskCanvas({ imageUrl, onMaskChange }: Props) {
     sctx.drawImage(mask, 0, 0, scaled.width, scaled.height);
     const data = sctx.getImageData(0, 0, scaled.width, scaled.height);
     const px = data.data;
+    const [tr, tg, tb] = brandTint();
     for (let i = 0; i < px.length; i += 4) {
       const white = px[i] > 127;
-      px[i] = 168; // purple-500
-      px[i + 1] = 85;
-      px[i + 2] = 247;
+      px[i] = tr;
+      px[i + 1] = tg;
+      px[i + 2] = tb;
       px[i + 3] = white ? 140 : 0;
     }
     sctx.putImageData(data, 0, 0);
@@ -168,7 +188,7 @@ export function MaskCanvas({ imageUrl, onMaskChange }: Props) {
               onClick={() => setErasing(false)}
               className={`p-2 rounded-lg border transition-colors ${
                 !erasing
-                  ? "bg-purple-500/20 border-purple-500/40 text-purple-300"
+                  ? "bg-brand-500/20 border-brand-500/40 text-brand-300"
                   : "border-white/10 text-gray-400 hover:text-white"
               }`}
               title="Paint mask"
@@ -180,7 +200,7 @@ export function MaskCanvas({ imageUrl, onMaskChange }: Props) {
               onClick={() => setErasing(true)}
               className={`p-2 rounded-lg border transition-colors ${
                 erasing
-                  ? "bg-purple-500/20 border-purple-500/40 text-purple-300"
+                  ? "bg-brand-500/20 border-brand-500/40 text-brand-300"
                   : "border-white/10 text-gray-400 hover:text-white"
               }`}
               title="Erase mask"
@@ -204,7 +224,7 @@ export function MaskCanvas({ imageUrl, onMaskChange }: Props) {
               max={120}
               value={brushSize}
               onChange={(e) => setBrushSize(Number(e.target.value))}
-              className="accent-purple-500"
+              className="accent-brand-500"
             />
           </label>
           <span className="text-xs text-gray-500">

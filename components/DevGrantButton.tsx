@@ -33,7 +33,7 @@ export function DevGrantButton() {
       <button
         onClick={grant}
         disabled={loading}
-        className="inline-flex items-center gap-2 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white px-8 py-4 rounded-xl text-lg font-medium transition-colors"
+        className="inline-flex items-center gap-2 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 text-white px-8 py-4 rounded-xl text-lg font-medium transition-colors"
       >
         {loading ? (
           <Loader2 className="w-5 h-5 animate-spin" />

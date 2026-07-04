@@ -83,15 +83,15 @@ export default async function AccountPage() {
           </div>
           <Link
             href="/pricing"
-            className="inline-flex items-center justify-between gap-3 px-4 py-2.5 rounded-xl bg-purple-500/10 border border-purple-500/20 hover:bg-purple-500/15 transition-colors"
+            className="inline-flex items-center justify-between gap-3 px-4 py-2.5 rounded-xl bg-brand-500/10 border border-brand-500/20 hover:bg-brand-500/15 transition-colors"
           >
             <span className="flex items-center gap-2">
-              <Coins className="w-4 h-4 text-purple-400" />
-              <span className="text-sm font-medium text-purple-300">
+              <Coins className="w-4 h-4 text-brand-400" />
+              <span className="text-sm font-medium text-brand-300">
                 {balance} credits
               </span>
             </span>
-            <span className="text-xs text-purple-400">Get more</span>
+            <span className="text-xs text-brand-400">Get more</span>
           </Link>
         </div>
       </section>

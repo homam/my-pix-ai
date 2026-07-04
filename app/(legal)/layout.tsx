@@ -1,6 +1,6 @@
 import Link from "next/link";
-import { Sparkles } from "lucide-react";
 import { BRAND } from "@/lib/brand";
+import { Logo } from "@/components/brand/Logo";
 
 // Shared shell for /terms and /privacy. All brand-variable content (entity
 // name, contact email) comes from lib/brand.ts so legal pages rebrand with
@@ -14,10 +14,7 @@ export default function LegalLayout({
     <div className="min-h-screen bg-[#0a0a0a]">
       <nav className="border-b border-white/5 backdrop-blur-sm sticky top-0 z-50 bg-black/50">
         <div className="max-w-3xl mx-auto px-6 h-16 flex items-center justify-between">
-          <Link href="/" className="flex items-center gap-2">
-            <Sparkles className="w-6 h-6 text-purple-400" />
-            <span className="text-lg font-semibold">{BRAND.name}</span>
-          </Link>
+          <Logo href="/" />
           <Link
             href="/dashboard"
             className="text-sm text-gray-400 hover:text-white transition-colors"

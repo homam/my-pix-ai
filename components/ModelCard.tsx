@@ -26,7 +26,7 @@ export function ModelCard({
 
   return (
     <div
-      className={`group relative bg-white/3 border ${statusBorder} rounded-2xl p-6 transition-all hover:border-purple-500/30 hover:bg-white/5`}
+      className={`group relative bg-white/3 border ${statusBorder} rounded-2xl p-6 transition-all hover:border-brand-500/30 hover:bg-white/5`}
     >
       {/* Stretched link: the whole card navigates to the model, but it stays a
           real <a href> (cmd/ctrl/middle-click open a new tab, right-click offers

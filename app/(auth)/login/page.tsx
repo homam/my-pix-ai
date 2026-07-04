@@ -2,9 +2,9 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Sparkles, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
-import { BRAND } from "@/lib/brand";
+import { Logo } from "@/components/brand/Logo";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -36,14 +36,11 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center p-6">
       <div className="w-full max-w-sm">
-        <Link href="/" className="flex items-center gap-2 justify-center mb-10">
-          <Sparkles className="w-6 h-6 text-purple-400" />
-          <span className="text-lg font-semibold">{BRAND.name}</span>
-        </Link>
+        <Logo href="/" className="justify-center mb-10" />
 
         {sent ? (
           <div className="bg-white/3 border border-white/10 rounded-2xl p-8 text-center">
-            <div className="w-14 h-14 bg-purple-500/15 rounded-full flex items-center justify-center mx-auto mb-4">
+            <div className="w-14 h-14 bg-brand-500/15 rounded-full flex items-center justify-center mx-auto mb-4">
               <span className="text-2xl">✉️</span>
             </div>
             <h2 className="text-xl font-semibold mb-2">Check your email</h2>
@@ -54,7 +51,7 @@ export default function LoginPage() {
             </p>
             <button
               onClick={() => { setSent(false); setEmail(""); }}
-              className="mt-6 text-sm text-purple-400 hover:text-purple-300"
+              className="mt-6 text-sm text-brand-400 hover:text-brand-300"
             >
               Use a different email
             </button>
@@ -81,7 +78,7 @@ export default function LoginPage() {
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="you@example.com"
                   required
-                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition-colors"
+                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 transition-colors"
                 />
               </div>
 
@@ -94,7 +91,7 @@ export default function LoginPage() {
               <button
                 type="submit"
                 disabled={loading || !email}
-                className="w-full bg-purple-600 hover:bg-purple-500 disabled:opacity-50 disabled:cursor-not-allowed text-white py-3 px-6 rounded-xl font-medium transition-colors flex items-center justify-center gap-2"
+                className="w-full bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white py-3 px-6 rounded-xl font-medium transition-colors flex items-center justify-center gap-2"
               >
                 {loading && <Loader2 className="w-4 h-4 animate-spin" />}
                 Send magic link

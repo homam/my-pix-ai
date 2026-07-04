@@ -1,25 +1,39 @@
 @import "tailwindcss";
 
 @theme {
+  /* Brand accent scale — the ONE place the product's accent hue lives (see
+     CLAUDE.md "White-label / rebranding"). Components use brand-* utilities
+     (bg-brand-500, text-brand-400, border-brand-500/40, …), never raw palette
+     classes like purple-*. To rebrand, change these hexes; --color-brand-2-*
+     is the gradient partner (hero text, favicon tile). Keep app/icon.svg's
+     hardcoded hexes in sync. Defaults: Tailwind purple-200…600 + pink-400/500. */
+  --color-brand-200: #e9d5ff;
+  --color-brand-300: #d8b4fe;
+  --color-brand-400: #c084fc;
+  --color-brand-500: #a855f7;
+  --color-brand-600: #9333ea;
+  --color-brand-2-400: #f472b6;
+  --color-brand-2-500: #ec4899;
+
   --color-background: hsl(0 0% 3.9%);
   --color-foreground: hsl(0 0% 98%);
   --color-card: hsl(0 0% 7%);
   --color-card-foreground: hsl(0 0% 98%);
   --color-popover: hsl(0 0% 7%);
   --color-popover-foreground: hsl(0 0% 98%);
-  --color-primary: hsl(271 91% 65%);
+  --color-primary: var(--color-brand-500);
   --color-primary-foreground: hsl(0 0% 98%);
   --color-secondary: hsl(0 0% 14.9%);
   --color-secondary-foreground: hsl(0 0% 98%);
   --color-muted: hsl(0 0% 14.9%);
   --color-muted-foreground: hsl(0 0% 63.9%);
-  --color-accent: hsl(271 91% 65%);
+  --color-accent: var(--color-brand-500);
   --color-accent-foreground: hsl(0 0% 98%);
   --color-destructive: hsl(0 62.8% 50%);
   --color-destructive-foreground: hsl(0 0% 98%);
   --color-border: hsl(0 0% 14.9%);
   --color-input: hsl(0 0% 14.9%);
-  --color-ring: hsl(271 91% 65%);
+  --color-ring: var(--color-brand-500);
   --radius: 0.75rem;
 }
 
@@ -39,14 +53,19 @@ body {
   }
 
   .gradient-text {
-    background: linear-gradient(135deg, #a855f7, #ec4899);
+    background: linear-gradient(
+      135deg,
+      var(--color-brand-500),
+      var(--color-brand-2-500)
+    );
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
   }
 
   .glow {
-    box-shadow: 0 0 40px rgba(168, 85, 247, 0.15);
+    box-shadow: 0 0 40px
+      color-mix(in srgb, var(--color-brand-500) 15%, transparent);
   }
 }
 
@@ -79,11 +98,11 @@ body {
 }
 
 .legal-prose a {
-  color: #c084fc;
+  color: var(--color-brand-400);
   text-decoration: underline;
   text-underline-offset: 2px;
 }
 
 .legal-prose a:hover {
-  color: #d8b4fe;
+  color: var(--color-brand-300);
 }

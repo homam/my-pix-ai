@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { Sparkles } from "lucide-react";
 import { createServiceClient } from "@/lib/supabase/server";
 import { BRAND, brandUrl } from "@/lib/brand";
+import { Logo } from "@/components/brand/Logo";
 
 // ISR: first hit renders + caches, subsequent within 60s are served from
 // cache, after 60s a background revalidate refreshes. Keeps OG scrapers and
@@ -120,13 +121,10 @@ export default async function SharePage({
   return (
     <div className="min-h-screen bg-neutral-950 text-white">
       <header className="border-b border-white/10 px-6 py-4 flex items-center justify-between">
-        <Link href="/" className="flex items-center gap-2 font-semibold">
-          <Sparkles className="w-5 h-5 text-purple-400" />
-          {BRAND.name}
-        </Link>
+        <Logo size="md" href="/" />
         <Link
           href="/login"
-          className="text-sm bg-purple-600 hover:bg-purple-500 transition-colors text-white px-4 py-1.5 rounded-lg"
+          className="text-sm bg-brand-600 hover:bg-brand-500 transition-colors text-white px-4 py-1.5 rounded-lg"
         >
           Make your own
         </Link>
@@ -179,7 +177,7 @@ export default async function SharePage({
           </p>
           <Link
             href="/login"
-            className="inline-flex items-center gap-2 bg-purple-600 hover:bg-purple-500 transition-colors text-white px-6 py-3 rounded-xl font-medium"
+            className="inline-flex items-center gap-2 bg-brand-600 hover:bg-brand-500 transition-colors text-white px-6 py-3 rounded-xl font-medium"
           >
             <Sparkles className="w-4 h-4" />
             Try {BRAND.name}

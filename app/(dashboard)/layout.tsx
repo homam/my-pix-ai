@@ -1,9 +1,9 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { Sparkles, LayoutDashboard, Plus, LogOut, Coins, User, Wand2, Images } from "lucide-react";
+import { LayoutDashboard, Plus, LogOut, Coins, User, Wand2, Images } from "lucide-react";
 import { getBalance } from "@/lib/credits";
-import { BRAND } from "@/lib/brand";
+import { Logo } from "@/components/brand/Logo";
 
 export default async function DashboardLayout({
   children,
@@ -31,10 +31,7 @@ export default async function DashboardLayout({
       {/* Sidebar */}
       <aside className="w-64 border-r border-white/5 flex flex-col shrink-0">
         <div className="p-6 border-b border-white/5">
-          <Link href="/" className="flex items-center gap-2">
-            <Sparkles className="w-5 h-5 text-purple-400" />
-            <span className="font-semibold">{BRAND.name}</span>
-          </Link>
+          <Logo size="md" href="/" />
         </div>
 
         <nav className="flex-1 p-4 space-y-1">
@@ -79,15 +76,15 @@ export default async function DashboardLayout({
           {/* Credits */}
           <Link
             href="/pricing"
-            className="flex items-center justify-between px-3 py-2.5 rounded-xl bg-purple-500/10 border border-purple-500/20 hover:bg-purple-500/15 transition-colors"
+            className="flex items-center justify-between px-3 py-2.5 rounded-xl bg-brand-500/10 border border-brand-500/20 hover:bg-brand-500/15 transition-colors"
           >
             <div className="flex items-center gap-2">
-              <Coins className="w-4 h-4 text-purple-400" />
-              <span className="text-sm font-medium text-purple-300">
+              <Coins className="w-4 h-4 text-brand-400" />
+              <span className="text-sm font-medium text-brand-300">
                 {balance} credits
               </span>
             </div>
-            <span className="text-xs text-purple-400">Get more</span>
+            <span className="text-xs text-brand-400">Get more</span>
           </Link>
 
           {/* User */}

@@ -34,7 +34,7 @@ export default async function NewModelPage() {
           </p>
           <Link
             href="/pricing"
-            className="inline-block bg-purple-600 hover:bg-purple-500 text-white px-6 py-2.5 rounded-xl text-sm font-medium transition-colors"
+            className="inline-block bg-brand-600 hover:bg-brand-500 text-white px-6 py-2.5 rounded-xl text-sm font-medium transition-colors"
           >
             Buy credits
           </Link>
