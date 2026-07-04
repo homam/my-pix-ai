@@ -34,10 +34,15 @@ export async function updateSession(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   const { pathname } = request.nextUrl;
+  // Keep in sync with app/(dashboard)/* — the layout redirects too, but gating at the edge
+  // avoids rendering anything for signed-out visitors.
   const isProtected =
     pathname.startsWith("/dashboard") ||
     pathname.startsWith("/models") ||
-    pathname.startsWith("/generate");
+    pathname.startsWith("/generate") ||
+    pathname.startsWith("/studio") ||
+    pathname.startsWith("/photos") ||
+    pathname.startsWith("/account");
 
   if (!user && isProtected) {
     const url = request.nextUrl.clone();

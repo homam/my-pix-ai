@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { constructWebhookEvent, isStripeConfigured } from "@/lib/stripe";
 import { createServiceClient } from "@/lib/supabase/server";
+import { addCredits } from "@/lib/credits";
 import { BRAND } from "@/lib/brand";
 
 export async function POST(req: NextRequest) {
@@ -41,13 +42,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true });
     }
 
+    // NOTE: uses grant_credits (not the idempotent settle_payment) — matches the original
+    // add_credits behavior here (no dedup on Stripe retry either way). Wiring core.credit_packs
+    // + settle_payment for real idempotency is a natural next step, not done in this pass.
     const supabase = await createServiceClient();
-    await supabase.rpc("add_credits", {
-      p_user_id: userId,
-      p_amount: parseInt(credits, 10),
-      p_stripe_session_id: session.id,
-      p_description: `Purchased ${pack.name} pack (${credits} credits)`,
-    });
+    await addCredits(supabase, userId, parseInt(credits, 10), session.id, `Purchased ${pack.name} pack (${credits} credits)`);
 
     console.log(`[stripe-webhook] +${credits} credits for user ${userId}`);
   }

@@ -16,7 +16,7 @@ export interface SignedUpload {
  * Supabase Storage — no bytes pass through our server.
  */
 export async function createSignedUpload(
-  supabase: SupabaseClient,
+  supabase: SupabaseClient<any, any, any>,
   path: string
 ): Promise<SignedUpload> {
   const { data, error } = await supabase.storage
@@ -39,7 +39,7 @@ export async function createSignedUpload(
   };
 }
 
-export function getPublicUrl(supabase: SupabaseClient, path: string): string {
+export function getPublicUrl(supabase: SupabaseClient<any, any, any>, path: string): string {
   const { data } = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(path);
   return data.publicUrl;
 }
@@ -64,7 +64,7 @@ export function storagePathFromUrl(url: string): string | null {
  * Uses service-role client because it inserts via storage.objects.
  */
 export async function mirrorImageToStorage(
-  serviceClient: SupabaseClient,
+  serviceClient: SupabaseClient<any, any, any>,
   userId: string,
   modelId: string,
   sourceUrl: string
@@ -106,7 +106,7 @@ export async function mirrorImageToStorage(
  * storage.objects for the authenticated role, so RLS would block removals.
  */
 export async function removePrefix(
-  serviceClient: SupabaseClient,
+  serviceClient: SupabaseClient<any, any, any>,
   prefix: string
 ): Promise<number> {
   const bucket = serviceClient.storage.from(STORAGE_BUCKET);
@@ -141,7 +141,7 @@ export async function removePrefix(
  * {userId}/generations/{modelId}.
  */
 export async function deleteModelStorage(
-  serviceClient: SupabaseClient,
+  serviceClient: SupabaseClient<any, any, any>,
   userId: string,
   modelId: string
 ): Promise<number> {
@@ -157,7 +157,7 @@ export async function deleteModelStorage(
  * Used when deleting an account.
  */
 export async function deleteUserStorage(
-  serviceClient: SupabaseClient,
+  serviceClient: SupabaseClient<any, any, any>,
   userId: string
 ): Promise<number> {
   return removePrefix(serviceClient, userId);
@@ -168,7 +168,7 @@ export async function deleteUserStorage(
  * Returns public URLs (bucket is public so Astria can fetch them).
  */
 export async function listModelImages(
-  supabase: SupabaseClient,
+  supabase: SupabaseClient<any, any, any>,
   userId: string,
   modelId: string
 ): Promise<string[]> {

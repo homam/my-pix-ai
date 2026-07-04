@@ -3,7 +3,10 @@
 
 FROM node:22-alpine AS deps
 WORKDIR /app
+# vendor/ holds a vendored tarball of @aionized/platform-client (a sibling-repo `file:` dep in
+# dev, which the Docker build context can't reach — see platform-client/README.md).
 COPY package.json package-lock.json ./
+COPY vendor ./vendor
 RUN npm ci
 
 FROM node:22-alpine AS builder

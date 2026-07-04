@@ -28,7 +28,7 @@ export interface KickoffTrainingArgs {
   modelName: string;
   imageUrls: string[];
   // Service-role client — writes models + model_images and (fal) the zip.
-  serviceClient: SupabaseClient;
+  serviceClient: SupabaseClient<any, any, any>;
   log: Logger;
 }
 
@@ -167,7 +167,7 @@ export async function kickoffTraining(
 // so a retrain with a new set doesn't leave stale rows (delete is a no-op for a
 // fresh model).
 async function replaceModelImages(
-  serviceClient: SupabaseClient,
+  serviceClient: SupabaseClient<any, any, any>,
   modelId: string,
   imageUrls: string[],
   userId: string,

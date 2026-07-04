@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { getProvider } from "@/lib/providers";
 import { AstriaTuneExpiredError } from "@/lib/astria";
-import { deductCredits } from "@/lib/credits";
+import { deductCredits, addCredits } from "@/lib/credits";
 import { mirrorImageToStorage } from "@/lib/storage";
 import { makeLogger, errInfo } from "@/lib/log";
 import { CREDIT_COSTS } from "@/types";
@@ -229,28 +229,13 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // Check + deduct credits (1 per image)
+  // Deduct credits (1 per image). deductCredits itself checks the balance atomically —
+  // no separate pre-check query needed. The wallet RPCs are service-role only (see
+  // docs/PLATFORM.md §3), so this goes through the service client, not the user-session one.
   const totalCost = numImages;
-  const { data: credits } = await supabase
-    .from("user_credits")
-    .select("balance")
-    .eq("user_id", user.id)
-    .single();
-
-  if (!credits || credits.balance < totalCost) {
-    log.warn("insufficient_credits", {
-      userId: user.id,
-      balance: credits?.balance ?? null,
-      totalCost,
-    });
-    return NextResponse.json(
-      { error: "Insufficient credits", reqId: log.reqId },
-      { status: 402 }
-    );
-  }
-
+  const serviceClient = await createServiceClient();
   const { success } = await deductCredits(
-    supabase,
+    serviceClient,
     user.id,
     "GENERATION",
     `Generate ${numImages} image(s): ${prompt.slice(0, 50)}`,
@@ -268,22 +253,15 @@ export async function POST(req: NextRequest) {
   log.info("credits_deducted", { userId: user.id, totalCost });
 
   const refund = async (reason: string) => {
-    const serviceClient = await createServiceClient();
-    const { error: refundErr } = await serviceClient.rpc("add_credits", {
-      p_user_id: user.id,
-      p_amount: CREDIT_COSTS.GENERATION * numImages,
-      p_stripe_session_id: null,
-      p_description: `Refund (${reason})`,
-    });
-    if (refundErr) {
+    try {
+      await addCredits(serviceClient, user.id, CREDIT_COSTS.GENERATION * numImages, null, `Refund (${reason})`);
+      log.info("credits_refunded", { userId: user.id, reason });
+    } catch (refundErr) {
       log.error("refund_failed", {
         userId: user.id,
         reason,
-        pgCode: refundErr.code,
-        pgMessage: refundErr.message,
+        pgMessage: refundErr instanceof Error ? refundErr.message : String(refundErr),
       });
-    } else {
-      log.info("credits_refunded", { userId: user.id, reason });
     }
   };
 

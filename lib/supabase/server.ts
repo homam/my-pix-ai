@@ -17,12 +17,14 @@ function makeCookieHandlers(cookieStore: Awaited<ReturnType<typeof cookies>>) {
   };
 }
 
+// `db.schema: "mypix"` scopes every `.from(...)` call in this app to `mypix.*` in the shared
+// aionized platform project — see the identical comment in lib/supabase/client.ts.
 export async function createClient() {
   const cookieStore = await cookies();
   return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    { cookies: makeCookieHandlers(cookieStore) }
+    { cookies: makeCookieHandlers(cookieStore), db: { schema: "mypix" } }
   );
 }
 
@@ -47,5 +49,6 @@ export async function createServiceClient() {
       autoRefreshToken: false,
       detectSessionInUrl: false,
     },
+    db: { schema: "mypix" },
   });
 }

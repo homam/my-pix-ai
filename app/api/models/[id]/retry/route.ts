@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { kickoffTraining, type TrainProvider } from "@/lib/training";
 import { isFalConfigured } from "@/lib/fal";
-import { deductCredits } from "@/lib/credits";
+import { deductCredits, addCredits } from "@/lib/credits";
 import { listModelImages, storagePathFromUrl, STORAGE_BUCKET } from "@/lib/storage";
 import { CREDIT_COSTS, Model } from "@/types";
 import { makeLogger, errInfo } from "@/lib/log";
@@ -142,8 +142,10 @@ export async function POST(
     fromStatus: model.status,
   });
 
+  // The wallet RPCs are service-role only (see docs/PLATFORM.md §3).
+  const serviceClient = await createServiceClient();
   const { success, balance } = await deductCredits(
-    supabase,
+    serviceClient,
     user.id,
     "TRAINING",
     `Retrain model: ${model.name}`
@@ -155,18 +157,17 @@ export async function POST(
     );
   }
 
-  const serviceClient = await createServiceClient();
   const refund = async (reason: string) => {
-    const { error: refundErr } = await serviceClient.rpc("add_credits", {
-      p_user_id: user.id,
-      p_amount: CREDIT_COSTS.TRAINING,
-      p_stripe_session_id: null,
-      p_description: `Refund (${reason}): ${model.name}`,
-    });
-    if (refundErr) {
-      log.error("refund_failed", { userId: user.id, modelId: id, reason, pgMessage: refundErr.message });
-    } else {
+    try {
+      await addCredits(serviceClient, user.id, CREDIT_COSTS.TRAINING, null, `Refund (${reason}): ${model.name}`);
       log.info("credits_refunded", { userId: user.id, modelId: id, reason });
+    } catch (refundErr) {
+      log.error("refund_failed", {
+        userId: user.id,
+        modelId: id,
+        reason,
+        pgMessage: refundErr instanceof Error ? refundErr.message : String(refundErr),
+      });
     }
   };
 

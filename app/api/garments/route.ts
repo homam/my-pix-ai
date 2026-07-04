@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { createGarmentTune, getTune } from "@/lib/astria";
-import { deductCredits } from "@/lib/credits";
+import { deductCredits, addCredits } from "@/lib/credits";
 import { storagePathFromUrl } from "@/lib/storage";
 import { makeLogger, errInfo } from "@/lib/log";
 import { CREDIT_COSTS } from "@/types";
@@ -98,8 +98,10 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  // The wallet RPCs are service-role only (see docs/PLATFORM.md §3).
+  const serviceClient = await createServiceClient();
   const { success } = await deductCredits(
-    supabase,
+    serviceClient,
     user.id,
     "GARMENT",
     `Garment fine-tune: ${title}`
@@ -112,13 +114,11 @@ export async function POST(req: NextRequest) {
   }
 
   const refund = async (reason: string) => {
-    const serviceClient = await createServiceClient();
-    await serviceClient.rpc("add_credits", {
-      p_user_id: user.id,
-      p_amount: CREDIT_COSTS.GARMENT,
-      p_stripe_session_id: null,
-      p_description: `Refund (${reason})`,
-    });
+    try {
+      await addCredits(serviceClient, user.id, CREDIT_COSTS.GARMENT, null, `Refund (${reason})`);
+    } catch {
+      // fire-and-forget refund, matches prior behavior (errors were already ignored here)
+    }
   };
 
   try {

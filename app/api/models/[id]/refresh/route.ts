@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { getTune } from "@/lib/astria";
 import { falTrainingStatus } from "@/lib/fal";
+import { addCredits } from "@/lib/credits";
 import { CREDIT_COSTS } from "@/types";
 
 // Manual refresh: polls the training engine for status. Use as a fallback when
@@ -63,12 +64,7 @@ export async function POST(
           .from("models")
           .update({ status: "failed", updated_at: new Date().toISOString() })
           .eq("id", model.id);
-        await service.rpc("add_credits", {
-          p_user_id: model.user_id,
-          p_amount: CREDIT_COSTS.TRAINING,
-          p_stripe_session_id: null,
-          p_description: `Refund for failed training: ${model.name}`,
-        });
+        await addCredits(service, model.user_id, CREDIT_COSTS.TRAINING, null, `Refund for failed training: ${model.name}`);
         return NextResponse.json({ status: "failed" });
       }
 
@@ -101,12 +97,7 @@ export async function POST(
       .eq("id", model.id);
 
     if (!isSuccess) {
-      await service.rpc("add_credits", {
-        p_user_id: model.user_id,
-        p_amount: CREDIT_COSTS.TRAINING,
-        p_stripe_session_id: null,
-        p_description: `Refund for failed training: ${model.name}`,
-      });
+      await addCredits(service, model.user_id, CREDIT_COSTS.TRAINING, null, `Refund for failed training: ${model.name}`);
     }
 
     return NextResponse.json({ status: newStatus });

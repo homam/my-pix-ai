@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { sendEmail } from "@/lib/email";
+import { addCredits } from "@/lib/credits";
 import { CREDIT_COSTS } from "@/types";
 import { BRAND, brandUrl } from "@/lib/brand";
 
@@ -63,12 +64,7 @@ export async function POST(req: NextRequest) {
       });
     }
   } else {
-    await supabase.rpc("add_credits", {
-      p_user_id: model.user_id,
-      p_amount: CREDIT_COSTS.TRAINING,
-      p_stripe_session_id: null,
-      p_description: `Refund for failed training: ${model.name}`,
-    });
+    await addCredits(supabase, model.user_id, CREDIT_COSTS.TRAINING, null, `Refund for failed training: ${model.name}`);
 
     if (userEmail) {
       await sendEmail({

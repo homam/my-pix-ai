@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { kickoffTraining } from "@/lib/training";
 import { isFalConfigured } from "@/lib/fal";
-import { deductCredits } from "@/lib/credits";
+import { deductCredits, addCredits } from "@/lib/credits";
 import { CREDIT_COSTS } from "@/types";
 import { makeLogger, errInfo } from "@/lib/log";
 import { z } from "zod";
@@ -99,9 +99,12 @@ export async function POST(req: NextRequest) {
   // A model is engine-bound at creation; train on that engine.
   const provider: "astria" | "fal" = model.provider === "fal" ? "fal" : "astria";
 
-  // Deduct credits
+  // Deduct credits. The wallet RPCs are service-role only (see docs/PLATFORM.md §3), so this
+  // — unlike most queries in this app — must go through the service client, not the
+  // user-session `supabase`.
+  const serviceClient = await createServiceClient();
   const { success, balance } = await deductCredits(
-    supabase,
+    serviceClient,
     user.id,
     "TRAINING",
     `Train model: ${modelName}`
@@ -117,23 +120,17 @@ export async function POST(req: NextRequest) {
 
   log.info("credits_deducted", { userId: user.id, modelId, balance, provider });
 
-  const serviceClient = await createServiceClient();
   const refund = async (reason: string) => {
-    const { error: refundErr } = await serviceClient.rpc("add_credits", {
-      p_user_id: user.id,
-      p_amount: CREDIT_COSTS.TRAINING,
-      p_stripe_session_id: null,
-      p_description: `Refund (${reason}): ${modelName}`,
-    });
-    if (refundErr) {
+    try {
+      await addCredits(serviceClient, user.id, CREDIT_COSTS.TRAINING, null, `Refund (${reason}): ${modelName}`);
+      log.info("credits_refunded", { userId: user.id, modelId, reason });
+    } catch (refundErr) {
       log.error("refund_failed", {
         userId: user.id,
         modelId,
         reason,
-        pgMessage: refundErr.message,
+        pgMessage: refundErr instanceof Error ? refundErr.message : String(refundErr),
       });
-    } else {
-      log.info("credits_refunded", { userId: user.id, modelId, reason });
     }
   };
 
