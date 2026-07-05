@@ -55,6 +55,12 @@ A rebrand touches five places:
    header/footer call site picks it up. (Remaining `Sparkles` icons elsewhere are decorative
    feature/button icons, not logos.)
 
+**Entities (2026-07-05, PLATFORM.md §10):** brands belong to a legal **entity** — `mypix` to
+`entity1`, `glowshot` to `entity2` (legal names TBD; `lib/brand.ts` derives each brand's legal
+block from the `ENTITIES` map, falling back to the brand display name). **User accounts never
+cross entities**: `core.bind_entity` binds a user on first wallet touch and every wallet RPC
+raises `ENTITY_MISMATCH` across the line.
+
 Product economics stay brand-independent by design (`CREDIT_COSTS` in `types/index.ts` — features
 belong to the product, per PLATFORM.md), and Stripe **price IDs stay per-deployment env vars**
 (`STRIPE_PRICE_*`), so each brand deployment points at its own Stripe prices. Never hardcode the

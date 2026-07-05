@@ -19,6 +19,28 @@ import type { CreditPack } from "@/types";
  * non-declared methods is still TODO — hiding a button is not the security boundary. */
 export type AuthMethod = "magic_link" | "password";
 
+/** The legal owner of a SET of brands (core.entities on the platform, 2026-07-05).
+ * Legal names/ownership come from the entity; user accounts never cross entities
+ * (enforced by core.bind_entity in every wallet RPC). Names are TBD — while
+ * `legalName` is null, legal copy falls back to the brand display name. */
+export interface EntityConfig {
+  key: "entity1" | "entity2"; // matches core.entities.key
+  legalName: string | null; // registered legal name; TBD
+  jurisdiction?: string;
+  sinceYear: number;
+}
+
+const ENTITIES: Record<"entity1" | "entity2", EntityConfig> = {
+  entity1: { key: "entity1", legalName: null, sinceYear: 2026 },
+  entity2: { key: "entity2", legalName: null, sinceYear: 2026 },
+};
+
+/** Legal block for a brand, derived from its entity (brand name as fallback). */
+function entityLegal(key: "entity1" | "entity2", fallbackName: string): BrandLegal {
+  const e = ENTITIES[key];
+  return { companyName: e.legalName ?? fallbackName, jurisdiction: e.jurisdiction, sinceYear: e.sinceYear };
+}
+
 export interface BrandLegal {
   /** Legal entity shown in the footer © line and on /terms + /privacy. */
   companyName: string;
@@ -58,6 +80,8 @@ export interface BrandConfig {
   /** Canonical production URL — fallback when NEXT_PUBLIC_APP_URL is unset. */
   productionUrl: string;
   supportEmail: string;
+  /** Legal owner of this brand; accounts never cross entities. */
+  entity: EntityConfig;
   legal: BrandLegal;
   auth: { methods: AuthMethod[] };
   /** Retail credit packs. Stripe price IDs stay per-deployment env vars. */
@@ -75,10 +99,8 @@ const BRANDS: Record<string, BrandConfig> = {
     tagline: "Your AI photo studio. Train once, generate forever.",
     productionUrl: "https://my-pix.ai",
     supportEmail: "hello@mypix.ai",
-    legal: {
-      companyName: "MyPix AI",
-      sinceYear: 2026,
-    },
+    entity: ENTITIES.entity1,
+    legal: entityLegal("entity1", "MyPix AI"),
     auth: { methods: ["magic_link", "password"] },
     packs: [
       {
@@ -127,10 +149,8 @@ const BRANDS: Record<string, BrandConfig> = {
     tagline: "Train once. Glow in every shot.",
     productionUrl: "https://pyt65zu7sr.eu-central-1.awsapprunner.com",
     supportEmail: "support@glowshot.app",
-    legal: {
-      companyName: "GlowShot",
-      sinceYear: 2026,
-    },
+    entity: ENTITIES.entity2,
+    legal: entityLegal("entity2", "GlowShot"),
     auth: { methods: ["magic_link", "password"] },
     // Same $ packs as mypix at launch; each deployment points at its own
     // STRIPE_PRICE_* env vars, so the Stripe products stay per-brand.
