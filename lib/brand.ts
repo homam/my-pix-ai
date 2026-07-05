@@ -13,6 +13,12 @@
 
 import type { CreditPack } from "@/types";
 
+/** Brand-scoped auth capability (PLATFORM.md §9 declare/enable/enforce): the login
+ * page renders only the declared methods. `password` accounts are owner-provisioned
+ * in the Supabase dashboard for now (no self-serve signup). Server-side rejection of
+ * non-declared methods is still TODO — hiding a button is not the security boundary. */
+export type AuthMethod = "magic_link" | "password";
+
 export interface BrandLegal {
   /** Legal entity shown in the footer © line and on /terms + /privacy. */
   companyName: string;
@@ -22,6 +28,20 @@ export interface BrandLegal {
   jurisdiction?: string;
   /** First year of operation for the © line. */
   sinceYear: number;
+}
+
+/** Brand accent scale — mirrors the `--color-brand-*` tokens in app/globals.css.
+ * The root layout injects these over the CSS defaults, and app/icon.tsx renders
+ * the favicon from them, so a rebrand needs no CSS/SVG edits. Keep `mypix`'s
+ * values identical to the globals.css defaults (its injection is a no-op). */
+export interface BrandTheme {
+  brand200: string;
+  brand300: string;
+  brand400: string;
+  brand500: string;
+  brand600: string;
+  brand2_400: string;
+  brand2_500: string;
 }
 
 export interface BrandConfig {
@@ -39,8 +59,10 @@ export interface BrandConfig {
   productionUrl: string;
   supportEmail: string;
   legal: BrandLegal;
+  auth: { methods: AuthMethod[] };
   /** Retail credit packs. Stripe price IDs stay per-deployment env vars. */
   packs: CreditPack[];
+  theme: BrandTheme;
 }
 
 const BRANDS: Record<string, BrandConfig> = {
@@ -57,6 +79,7 @@ const BRANDS: Record<string, BrandConfig> = {
       companyName: "MyPix AI",
       sinceYear: 2026,
     },
+    auth: { methods: ["magic_link", "password"] },
     packs: [
       {
         id: "starter",
@@ -84,6 +107,70 @@ const BRANDS: Record<string, BrandConfig> = {
         description: "10 models + 300 photos",
       },
     ],
+    // Tailwind purple-200…600 + pink-400/500 — identical to the globals.css defaults.
+    theme: {
+      brand200: "#e9d5ff",
+      brand300: "#d8b4fe",
+      brand400: "#c084fc",
+      brand500: "#a855f7",
+      brand600: "#9333ea",
+      brand2_400: "#f472b6",
+      brand2_500: "#ec4899",
+    },
+  },
+  glowshot: {
+    key: "glowshot",
+    name: "GlowShot",
+    metaTitle: "GlowShot — AI Photos That Glow",
+    description:
+      "Upload 10–20 photos of yourself and get glowing, photorealistic AI portraits in any setting, outfit, or style.",
+    tagline: "Train once. Glow in every shot.",
+    productionUrl: "https://pyt65zu7sr.eu-central-1.awsapprunner.com",
+    supportEmail: "support@glowshot.app",
+    legal: {
+      companyName: "GlowShot",
+      sinceYear: 2026,
+    },
+    auth: { methods: ["magic_link", "password"] },
+    // Same $ packs as mypix at launch; each deployment points at its own
+    // STRIPE_PRICE_* env vars, so the Stripe products stay per-brand.
+    packs: [
+      {
+        id: "starter",
+        name: "Starter",
+        credits: 50,
+        price: 900,
+        priceId: "STRIPE_PRICE_STARTER",
+        description: "1 model + 30 photos",
+      },
+      {
+        id: "pro",
+        name: "Pro",
+        credits: 200,
+        price: 2900,
+        priceId: "STRIPE_PRICE_PRO",
+        popular: true,
+        description: "4 models + 120 photos",
+      },
+      {
+        id: "ultra",
+        name: "Ultra",
+        credits: 500,
+        price: 5900,
+        priceId: "STRIPE_PRICE_ULTRA",
+        description: "10 models + 300 photos",
+      },
+    ],
+    // Tailwind amber-200…600 + rose-400/500 — golden-hour glow.
+    theme: {
+      brand200: "#fde68a",
+      brand300: "#fcd34d",
+      brand400: "#fbbf24",
+      brand500: "#f59e0b",
+      brand600: "#d97706",
+      brand2_400: "#fb7185",
+      brand2_500: "#f43f5e",
+    },
   },
 };
 

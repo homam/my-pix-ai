@@ -10,7 +10,7 @@ AI photo studio: users upload photos → fine-tune a FLUX.1 LoRA on their likene
 
 ## Stack
 - **Framework**: Next.js 15 App Router + TypeScript
-- **Auth + DB + Storage**: Supabase (magic-link auth, Postgres with RLS, Storage for photo uploads)
+- **Auth + DB + Storage**: Supabase (magic-link + email/password auth, Postgres with RLS, Storage for photo uploads)
 - **AI**: Astria.ai (FLUX.1 LoRA training + inference, ~$2.13/user)
 - **Payments (optional)**: Stripe — enabled when `STRIPE_SECRET_KEY` is set
 - **Email (optional)**: Resend — enabled when `RESEND_API_KEY` is set
@@ -39,15 +39,17 @@ A rebrand touches five places:
    `core.brands` row on the shared platform project — one INSERT, see PLATFORM.md "Onboard a NEW
    BRAND"), the brand's domain in `NEXT_PUBLIC_APP_URL`, its own `STRIPE_PRICE_*` / `STRIPE_*`
    keys and `RESEND_FROM_EMAIL`.
-3. **`app/globals.css`** — the `--color-brand-200…600` scale plus the `--color-brand-2-*`
-   gradient partner in the `@theme` block drive every accent, button, badge, and gradient.
+3. **Colors are part of the `BrandConfig`** (since the 2026-07-04 multi-brand rollout):
+   `theme` in `lib/brand.ts` holds the `brand200…600` + `brand2_*` scale per brand; the root
+   layout injects it over the `--color-brand-*` defaults in `app/globals.css` `@theme` (for
+   `mypix` the injection is a no-op — keep its values identical to the CSS defaults).
    Components use `brand-*` utilities (`bg-brand-600`, `text-brand-400`, `border-brand-500/40`,
    …), never raw palette classes; the semantic tokens (`--color-primary` / `--color-accent` /
    `--color-ring`), `.gradient-text`, `.glow`, `.legal-prose`, and the studio mask tint (read at
    runtime in `components/studio/MaskCanvas.tsx`) all derive from the scale.
-4. **`app/icon.svg`** — the favicon (gradient tile + sparkle mark, auto-served by the App
-   Router). SVG can't read the CSS theme, so keep its two hardcoded gradient stops in sync with
-   the brand tokens.
+4. **`app/icon.tsx`** — the favicon, generated at build time from `BRAND.theme` (gradient tile +
+   sparkle mark). Replaced the old static `app/icon.svg` whose hexes had to be kept in sync by
+   hand — no per-brand favicon edits needed anymore.
 5. **`components/brand/Logo.tsx`** — the mark + wordmark (`Logo`, with `LogoMark` for the icon
    alone); the wordmark text comes from `BRAND`. Swap the mark or layout here once; every
    header/footer call site picks it up. (Remaining `Sparkles` icons elsewhere are decorative
@@ -59,14 +61,21 @@ belong to the product, per PLATFORM.md), and Stripe **price IDs stay per-deploym
 brand name, support email, pack prices, legal entity, accent color, or logo mark in components —
 import `BRAND` (and `brandUrl()`) from `lib/brand.ts`, use `brand-*` utilities, render `<Logo />`.
 
-**Auth & payments are brand-scoped capabilities** (decided 2026-07-04, not yet implemented):
-brands of this product may support *different* login methods (magic link, username/password,
-magic token, …) and *different* payment rails (Stripe, DCB, …). Features stay product-scoped;
-how a user gets in and pays belongs to the brand. When implementing, follow the
-declare/enable/enforce pattern in `product-image-tools/docs/PLATFORM.md` §9: `BrandConfig`
-declares `auth.methods` + `payments.providers`, env vars enable them per deployment
-(declared-but-unconfigured fails the build loudly), and auth/payment routes reject
-non-declared methods **server-side** — hiding a login button is not the boundary.
+**Auth & payments are brand-scoped capabilities** (decided 2026-07-04; auth **partially
+implemented 2026-07-05**): brands of this product may support *different* login methods
+(magic link, username/password, magic token, …) and *different* payment rails (Stripe,
+DCB, …). Features stay product-scoped; how a user gets in and pays belongs to the brand.
+Implemented so far (per `product-image-tools/docs/PLATFORM.md` §9 declare/enable/enforce):
+`BrandConfig.auth.methods` in `lib/brand.ts` declares each brand's login methods (both
+brands: `magic_link` + `password`), and the login page renders only declared methods —
+email+password sign-in is live (`signInWithPassword`), with accounts **owner-provisioned
+in the Supabase dashboard** (no self-serve signup UI). Password reset is self-serve
+(2026-07-05): "Forgot password?" on `/login` → `resetPasswordForEmail` → recovery email →
+`/auth/callback?next=/reset-password` → `app/(auth)/reset-password/page.tsx`
+(`updateUser({password})`; no session on that page = expired link). Still TODO:
+`payments.providers` declaration, per-deployment env enablement
+(declared-but-unconfigured should fail the build loudly), and **server-side** rejection
+of non-declared methods — hiding a login button is not the boundary.
 
 Not brand-scoped yet (acceptable for now, flagged for later): landing-page marketing copy beyond
 name/tagline (`app/page.tsx` hero/features/scenario chips), and each brand still shares one
@@ -136,12 +145,18 @@ Without these, emails on training-complete / training-failed are logged to the s
 
 Production runs on **AWS App Runner**: https://wy7kp3ie3e.eu-central-1.awsapprunner.com
 (account `178269041738`, region `eu-central-1`, service `my-pix-ai`, 1 vCPU / 2 GB).
+App Runner is closed to new AWS customers since 2026-04-30 (we're grandfathered, no EOL date,
+new services still allowed) — staying for now; exit runbook + migration triggers in
+`../product-image-tools/docs/APP-RUNNER-SUNSET.md`.
 
-**To deploy:** `./scripts/deploy.sh` — builds the linux/amd64 Docker image (standalone
-Next.js build; `NEXT_PUBLIC_*` baked in as build args), pushes to ECR
-(`.../my-pix-ai:latest`), and App Runner auto-deploys on push. Secrets
-(`SUPABASE_SERVICE_ROLE_KEY`, `ASTRIA_API_KEY`, `FAL_KEY`, …) are runtime env vars on
-the service, not in the image. `DEV_GRANT_CREDITS=false` in production.
+**To deploy:** `./scripts/deploy.sh` — builds the linux/amd64 image **per brand** (standalone
+Next.js build; `NEXT_PUBLIC_*` baked in as build args) and rolls out **every** brand in
+`deploy/brands/*.env`: `mypix` → service `my-pix-ai` (ECR `:latest`) and, since 2026-07-04,
+`glowshot` → service `glowshot` at `https://pyt65zu7sr.eu-central-1.awsapprunner.com` (ECR
+`:glowshot`). Feature sets stay in sync across brands, so a deploy is all-brands by definition.
+Secrets (`SUPABASE_SERVICE_ROLE_KEY`, `ASTRIA_API_KEY`, `FAL_KEY`, …) are runtime env vars on
+each service, not in the image (`glowshot` has its own `ASTRIA_WEBHOOK_PUBLIC_URL`).
+`DEV_GRANT_CREDITS=false` in production.
 
 Gotchas encoded in the Dockerfile — don't undo them:
 - App Runner injects its own `HOSTNAME` at runtime, so the CMD forces `HOSTNAME=0.0.0.0`
@@ -226,9 +241,9 @@ Either way, polling remains as a fallback — webhooks can be lost, so you alway
 ---
 
 ## Key files
-- `lib/brand.ts` — white-label brand registry (name, SEO copy, support email, legal entity, credit packs); selected by `NEXT_PUBLIC_BRAND_KEY`
+- `lib/brand.ts` — white-label brand registry (name, SEO copy, support email, legal entity, credit packs, color theme); selected by `NEXT_PUBLIC_BRAND_KEY`. Brands: `mypix` (purple/pink), `glowshot` (amber/rose, service `glowshot` on App Runner)
 - `components/brand/Logo.tsx` — swappable brand mark + wordmark (all header/footer logos render this)
-- `app/icon.svg` — per-brand favicon (gradient tile + sparkle mark; hexes mirror the brand tokens)
+- `app/icon.tsx` — favicon generated from `BRAND.theme` at build time
 - `app/globals.css` — `--color-brand-*` accent scale in `@theme`; components use `brand-*` utilities, never raw palette classes
 - `lib/astria.ts` — Astria API client (createTune, generateImages, editImage, createGarmentTune, getTune); throws `AstriaTuneExpiredError` on expired-tune 422s
 - `lib/training.ts` — shared `kickoffTraining()` (engine-branched training kickoff) used by both `/api/train` and the retry route

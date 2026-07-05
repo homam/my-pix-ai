@@ -1,45 +1,93 @@
 #!/usr/bin/env bash
-# Deploy MyPix AI to AWS App Runner (the canonical production deployment).
+# Deploy EVERY brand of MyPix AI (product `mypix`) to AWS App Runner.
 #
-# Builds the linux/amd64 image with production NEXT_PUBLIC_* values baked in,
-# pushes to ECR; App Runner auto-deploys on push (~3-5 min rollout).
+# Brands share one codebase and one feature set — a deploy rolls out ALL brand
+# deployments listed in deploy/brands/*.env so they never drift. Each brand file
+# sets BRAND_KEY / ECR_TAG / SERVICE_NAME / APP_URL / AUTO_DEPLOY; the brand's
+# copy + packs + colors live in the lib/brand.ts registry. To restrict to
+# specific brands (emergency only — drifting brands violates the sync rule),
+# pass their keys: `scripts/deploy.sh glowshot`.
 #
-# Requires: docker running, aws CLI with credentials for account 178269041738.
+# Builds linux/amd64 (App Runner is x86_64; arm64 images fail the health check
+# with no logs). Secrets stay runtime-only on the services, never in the image.
+# Mirrors the other 3 product repos' scripts/deploy.sh.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+ACCOUNT=178269041738
 REGION=eu-central-1
-ECR=178269041738.dkr.ecr.eu-central-1.amazonaws.com/my-pix-ai
-APP_URL=https://wy7kp3ie3e.eu-central-1.awsapprunner.com
-SERVICE_ARN=arn:aws:apprunner:eu-central-1:178269041738:service/my-pix-ai/5e1e4dbfbd034093b68a587a30c27366
+REPO=my-pix-ai
+ECR="$ACCOUNT.dkr.ecr.$REGION.amazonaws.com"
 
-# Public (build-time) values; secrets stay runtime-only on the service.
-NEXT_PUBLIC_SUPABASE_URL=$(grep '^NEXT_PUBLIC_SUPABASE_URL=' .env.local | cut -d= -f2-)
-NEXT_PUBLIC_SUPABASE_ANON_KEY=$(grep '^NEXT_PUBLIC_SUPABASE_ANON_KEY=' .env.local | cut -d= -f2-)
+set -a; [ -f .env.local ] && . ./.env.local; set +a
+SB_URL="${NEXT_PUBLIC_SUPABASE_URL:-}"
+SB_ANON="${NEXT_PUBLIC_SUPABASE_ANON_KEY:-}"
 
-echo "Building..."
-docker build --platform linux/amd64 \
-  --build-arg NEXT_PUBLIC_SUPABASE_URL="$NEXT_PUBLIC_SUPABASE_URL" \
-  --build-arg NEXT_PUBLIC_SUPABASE_ANON_KEY="$NEXT_PUBLIC_SUPABASE_ANON_KEY" \
-  --build-arg NEXT_PUBLIC_APP_URL="$APP_URL" \
-  -t my-pix-ai:latest .
+aws ecr get-login-password --region "$REGION" \
+  | docker login --username AWS --password-stdin "$ECR"
 
-echo "Pushing to ECR (App Runner auto-deploys on push)..."
-aws ecr get-login-password --region "$REGION" |
-  docker login --username AWS --password-stdin "${ECR%%/*}"
-docker tag my-pix-ai:latest "$ECR:latest"
-docker push "$ECR:latest"
+service_arn() {
+  aws apprunner list-services --region "$REGION" \
+    --query "ServiceSummaryList[?ServiceName=='$1'].ServiceArn | [0]" --output text
+}
 
-echo "Waiting for App Runner rollout..."
-# Give the auto-deploy pipeline up to 3 min to start, then wait for it to finish.
-n=0
-while [ "$(aws apprunner describe-service --region "$REGION" --service-arn "$SERVICE_ARN" --query 'Service.Status' --output text)" = "RUNNING" ] && [ $n -lt 12 ]; do
-  sleep 15; n=$((n+1))
+want() {
+  local k=$1; shift
+  [ $# -eq 0 ] && return 0
+  for w in "$@"; do [ "$w" = "$k" ] && return 0; done
+  return 1
+}
+
+DEPLOYED=()
+for f in deploy/brands/*.env; do
+  key=$(basename "$f" .env)
+  want "$key" "$@" || { echo "── skipping $key"; continue; }
+  BRAND_KEY= ECR_TAG= SERVICE_NAME= APP_URL= AUTO_DEPLOY=true
+  # shellcheck disable=SC1090
+  . "$f"
+  IMG="$ECR/$REPO:$ECR_TAG"
+  echo "══ building $BRAND_KEY → $IMG"
+  docker buildx build --platform linux/amd64 --provenance=false --sbom=false \
+    --build-arg NEXT_PUBLIC_SUPABASE_URL="$SB_URL" \
+    --build-arg NEXT_PUBLIC_SUPABASE_ANON_KEY="$SB_ANON" \
+    --build-arg NEXT_PUBLIC_BRAND_KEY="$BRAND_KEY" \
+    --build-arg NEXT_PUBLIC_APP_URL="$APP_URL" \
+    -t "$IMG" --push .
+  if [ "$AUTO_DEPLOY" != "true" ]; then
+    aws apprunner start-deployment --region "$REGION" --service-arn "$(service_arn "$SERVICE_NAME")" >/dev/null
+    echo "   start-deployment issued for $SERVICE_NAME (auto-deploy off)"
+  fi
+  DEPLOYED+=("$SERVICE_NAME|$APP_URL|${BRAND_NAME:-}")
 done
-until [ "$(aws apprunner describe-service --region "$REGION" --service-arn "$SERVICE_ARN" --query 'Service.Status' --output text)" != "OPERATION_IN_PROGRESS" ]; do
-  sleep 20
-done
 
-STATUS=$(aws apprunner describe-service --region "$REGION" --service-arn "$SERVICE_ARN" --query 'Service.Status' --output text)
-echo "Service status: $STATUS"
-curl -s -o /dev/null -w "smoke test: %{http_code}\n" "$APP_URL"
+echo "══ waiting for rollouts"
+for entry in "${DEPLOYED[@]}"; do
+  IFS='|' read -r svc url bname <<< "$entry"
+  arn=$(service_arn "$svc")
+  n=0
+  while [ "$(aws apprunner describe-service --region "$REGION" --service-arn "$arn" --query 'Service.Status' --output text)" = "RUNNING" ] && [ $n -lt 12 ]; do
+    sleep 15; n=$((n+1))
+  done
+  until [ "$(aws apprunner describe-service --region "$REGION" --service-arn "$arn" --query 'Service.Status' --output text)" != "OPERATION_IN_PROGRESS" ]; do
+    sleep 20
+  done
+  status=$(aws apprunner describe-service --region "$REGION" --service-arn "$arn" --query 'Service.Status' --output text)
+  code=$(curl -s -o /dev/null -w "%{http_code}" "$url")
+  echo "   $svc: $status · smoke $code · $url"
+  # Auto-deploy can race a just-pushed tag and roll out the previous digest
+  # (seen 2026-07-04 on glowshot). Verify the served page mentions the brand;
+  # if not, force one explicit redeploy of the (correct) tag and re-check.
+  if [ -n "$bname" ] && ! curl -s "$url" | grep -q "$bname"; then
+    echo "   $svc: page does not mention '$bname' — forcing start-deployment (stale-digest race)"
+    aws apprunner start-deployment --region "$REGION" --service-arn "$arn" >/dev/null
+    until [ "$(aws apprunner describe-service --region "$REGION" --service-arn "$arn" --query 'Service.Status' --output text)" != "OPERATION_IN_PROGRESS" ]; do
+      sleep 20
+    done
+    if curl -s "$url" | grep -q "$bname"; then
+      echo "   $svc: brand check OK after redeploy"
+    else
+      echo "   $svc: STILL failing brand check — investigate the image build" >&2
+      exit 1
+    fi
+  fi
+done
