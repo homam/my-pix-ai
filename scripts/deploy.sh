@@ -75,19 +75,32 @@ for entry in "${DEPLOYED[@]}"; do
   code=$(curl -s -o /dev/null -w "%{http_code}" "$url")
   echo "   $svc: $status · smoke $code · $url"
   # Auto-deploy can race a just-pushed tag and roll out the previous digest
-  # (seen 2026-07-04 on glowshot). Verify the served page mentions the brand;
-  # if not, force one explicit redeploy of the (correct) tag and re-check.
-  if [ -n "$bname" ] && ! curl -s "$url" | grep -q "$bname"; then
-    echo "   $svc: page does not mention '$bname' — forcing start-deployment (stale-digest race)"
-    aws apprunner start-deployment --region "$REGION" --service-arn "$arn" >/dev/null
-    until [ "$(aws apprunner describe-service --region "$REGION" --service-arn "$arn" --query 'Service.Status' --output text)" != "OPERATION_IN_PROGRESS" ]; do
+  # (seen 2026-07-04 on glowshot). Served content can also LAG the SUCCEEDED
+  # operation by a minute or two while App Runner shifts traffic (two false
+  # "STILL failing" alarms on aioc-web, 2026-07-05), so poll the page — before
+  # and after the one forced redeploy — instead of checking once.
+  if [ -n "$bname" ]; then
+    ok=""
+    for _ in 1 2 3 4 5 6; do
+      if curl -s "$url" | grep -q "$bname"; then ok=1; break; fi
       sleep 20
     done
-    if curl -s "$url" | grep -q "$bname"; then
-      echo "   $svc: brand check OK after redeploy"
-    else
-      echo "   $svc: STILL failing brand check — investigate the image build" >&2
-      exit 1
+    if [ -z "$ok" ]; then
+      echo "   $svc: page does not mention '$bname' — forcing start-deployment (stale-digest race)"
+      aws apprunner start-deployment --region "$REGION" --service-arn "$arn" >/dev/null
+      until [ "$(aws apprunner describe-service --region "$REGION" --service-arn "$arn" --query 'Service.Status' --output text)" != "OPERATION_IN_PROGRESS" ]; do
+        sleep 20
+      done
+      for _ in 1 2 3 4 5 6 7 8 9 10; do
+        if curl -s "$url" | grep -q "$bname"; then ok=1; break; fi
+        sleep 30
+      done
+      if [ -n "$ok" ]; then
+        echo "   $svc: brand check OK after redeploy"
+      else
+        echo "   $svc: STILL failing brand check — investigate the image build" >&2
+        exit 1
+      fi
     fi
   fi
 done
