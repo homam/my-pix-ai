@@ -115,7 +115,10 @@ const falProvider: ImageProvider = {
       loraUrl: model.falLoraUrl,
       numImages: req.numImages,
       imageSize: FAL_IMAGE_SIZE[req.aspectRatio] ?? "square_hd",
-      guidanceScale: req.cfgScale,
+      // NOTE: deliberately NOT passing req.cfgScale as guidance_scale — that is
+      // Astria's FLUX.1 CFG scale (realism presets 1.5/3/5) and does not map to
+      // fal's FLUX.2 guidance. falGenerateFlux2 applies FAL_GUIDANCE_SCALE (~3.0)
+      // and FAL_LORA_SCALE (~1.2), both tuned for face-identity LoRAs.
       ...(req.seed != null ? { seed: req.seed } : {}),
       ...(req.webhookUrl ? { webhookUrl: req.webhookUrl } : {}),
     });

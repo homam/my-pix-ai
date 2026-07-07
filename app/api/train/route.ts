@@ -5,6 +5,13 @@ import { isFalConfigured } from "@/lib/fal";
 import { deductCredits, addCredits } from "@/lib/credits";
 import { CREDIT_COSTS } from "@/types";
 import { makeLogger, errInfo } from "@/lib/log";
+import {
+  DEFAULT_QUALITY,
+  resolveSteps,
+  clampSteps,
+  STEPS_MIN,
+  STEPS_MAX,
+} from "@/lib/trainingPresets";
 import { z } from "zod";
 
 // fal training zips + uploads all photos server-side before submitting, so give
@@ -15,6 +22,12 @@ const schema = z.object({
   modelId: z.string().uuid(),
   imageUrls: z.array(z.string().url()).min(10).max(40),
   modelName: z.string().min(1).max(60),
+  // Training-quality preset (everyday users). Resolved to a per-engine step
+  // count server-side; defaults to Balanced.
+  quality: z.enum(["fast", "balanced", "max"]).optional(),
+  // Advanced custom step override. When present it wins over `quality`; clamped
+  // server-side so a client can't post a runaway (costly) value.
+  steps: z.number().int().min(STEPS_MIN).max(STEPS_MAX).optional(),
 });
 
 export async function POST(req: NextRequest) {
@@ -63,11 +76,14 @@ export async function POST(req: NextRequest) {
   }
 
   const { modelId, imageUrls, modelName } = parsed.data;
+  const quality = parsed.data.quality ?? DEFAULT_QUALITY;
   log.info("input_validated", {
     userId: user.id,
     modelId,
     modelName,
     imageCount: imageUrls.length,
+    quality,
+    customSteps: parsed.data.steps ?? null,
   });
 
   // Verify model ownership and pending status (first training only — retrain
@@ -98,6 +114,13 @@ export async function POST(req: NextRequest) {
 
   // A model is engine-bound at creation; train on that engine.
   const provider: "astria" | "fal" = model.provider === "fal" ? "fal" : "astria";
+
+  // Resolve the step count for this engine: an explicit Advanced value (clamped)
+  // wins, else the quality preset (null = engine's own default).
+  const steps =
+    parsed.data.steps != null
+      ? clampSteps(parsed.data.steps)
+      : resolveSteps(quality, provider);
 
   // Deduct credits. The wallet RPCs are service-role only (see docs/PLATFORM.md §3), so this
   // — unlike most queries in this app — must go through the service client, not the
@@ -160,10 +183,11 @@ export async function POST(req: NextRequest) {
       userId: user.id,
       modelName,
       imageUrls,
+      steps,
       serviceClient,
       log,
     });
-    log.info("train_started", { userId: user.id, modelId, provider });
+    log.info("train_started", { userId: user.id, modelId, provider, steps });
     return NextResponse.json({ ...result, balance, reqId: log.reqId });
   } catch (err) {
     const info = errInfo(err);

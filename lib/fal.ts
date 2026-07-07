@@ -28,6 +28,25 @@ export function isFalConfigured(): boolean {
   return Boolean(process.env.FAL_KEY);
 }
 
+// Identity/quality tuning for the fal (FLUX.2) engine. Defaults are chosen for
+// single-subject face LoRAs, NOT copied from Astria — the two engines use
+// different scales, so reusing Astria's CFG numbers as fal guidance is wrong:
+//   - loraScale > 1 strengthens likeness (a LoRA at 1.0 often renders a weak,
+//     "sort-of-like-me" face; 1.2 is a good identity default, up to ~1.4).
+//   - fal's FLUX.2 wants guidance ~2.5–3.5 (its own default is 2.5); Astria's
+//     realism-preset CFG (1.5/3/5) does not translate.
+// Both overridable per-deployment (tune without a code change / redeploy).
+function envNum(name: string, fallback: number): number {
+  const v = Number(process.env[name]);
+  return Number.isFinite(v) && v > 0 ? v : fallback;
+}
+export function falLoraScale(): number {
+  return envNum("FAL_LORA_SCALE", 1.2);
+}
+export function falGuidanceScale(): number {
+  return envNum("FAL_GUIDANCE_SCALE", 3.0);
+}
+
 function headers() {
   return {
     Authorization: `Key ${process.env.FAL_KEY}`,
@@ -163,11 +182,11 @@ export async function falGenerateFlux2(
   const {
     prompt,
     loraUrl,
-    loraScale = 1.0,
+    loraScale = falLoraScale(),
     numImages = 4,
     seed,
     imageSize = "portrait_4_3",
-    guidanceScale = 2.5,
+    guidanceScale = falGuidanceScale(),
     numInferenceSteps = 28,
     webhookUrl,
   } = params;
@@ -211,12 +230,16 @@ export interface FalSubmitTrainingParams {
  * Kicks off a FLUX.2 LoRA training job on fal and returns its request id. Does
  * NOT wait — training runs for many minutes; the refresh route polls
  * falTrainingStatus() (or a webhook fires) to finish it. Cost ≈ $0.0064/step
- * (~$6.40 at 1000 steps), notably pricier than Astria's ~$1.50 portrait tune.
+ * (~$9.60 at the 1500-step Balanced default), notably pricier than Astria's
+ * ~$1.50 portrait tune. Callers normally pass a resolved step count from the
+ * training-quality preset (lib/trainingPresets.ts); the default here is the
+ * Balanced value so an unspecified train isn't the too-light 1000 that made
+ * Ultra likeness trail Standard.
  */
 export async function falSubmitTraining(
   params: FalSubmitTrainingParams
 ): Promise<{ requestId: string }> {
-  const { imageDataUrl, steps = 1000, webhookUrl } = params;
+  const { imageDataUrl, steps = 1500, webhookUrl } = params;
 
   const input: Record<string, unknown> = {
     image_data_url: imageDataUrl,

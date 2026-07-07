@@ -60,10 +60,14 @@ export interface CreateTuneParams {
   imageUrls: string[];
   webhookUrl?: string;
   modelName?: string;
+  // Training steps. null (default) = let the `flux-lora-portrait` preset pick
+  // its own step count (known-good); a number overrides it (from the training
+  // quality preset / Advanced control — see lib/trainingPresets.ts).
+  steps?: number | null;
 }
 
 export async function createTune(params: CreateTuneParams): Promise<AstriaTune> {
-  const { title, imageUrls, webhookUrl, modelName = "ohwx person" } = params;
+  const { title, imageUrls, webhookUrl, modelName = "ohwx person", steps = null } = params;
 
   const body: Record<string, unknown> = {
     tune: {
@@ -74,7 +78,7 @@ export async function createTune(params: CreateTuneParams): Promise<AstriaTune> 
       preset: "flux-lora-portrait",
       base_tune_id: FLUX_BASE_TUNE_ID,
       image_urls: imageUrls,
-      steps: null,
+      steps,
       ...autoExtendField(),
       ...(webhookUrl ? { callback: webhookUrl } : {}),
     },

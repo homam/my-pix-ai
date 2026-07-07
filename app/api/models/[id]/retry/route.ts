@@ -6,6 +6,13 @@ import { deductCredits, addCredits } from "@/lib/credits";
 import { listModelImages, storagePathFromUrl, STORAGE_BUCKET } from "@/lib/storage";
 import { CREDIT_COSTS, Model } from "@/types";
 import { makeLogger, errInfo } from "@/lib/log";
+import {
+  DEFAULT_QUALITY,
+  resolveSteps,
+  clampSteps,
+  STEPS_MIN,
+  STEPS_MAX,
+} from "@/lib/trainingPresets";
 import { z } from "zod";
 
 // Retrain can zip + upload photos server-side (fal) and calls a provider, so
@@ -17,6 +24,10 @@ const schema = z.object({
   provider: z.enum(["astria", "fal"]).optional(),
   // New photo set to train on. Omitted = reuse the model's stored photos.
   imageUrls: z.array(z.string().url()).min(10).max(40).optional(),
+  // Training-quality preset; resolved to a per-engine step count server-side.
+  quality: z.enum(["fast", "balanced", "max"]).optional(),
+  // Advanced custom step override (clamped server-side); wins over `quality`.
+  steps: z.number().int().min(STEPS_MIN).max(STEPS_MAX).optional(),
 });
 
 /**
@@ -84,6 +95,14 @@ export async function POST(
   const previousProvider: TrainProvider = model.provider === "fal" ? "fal" : "astria";
   const provider: TrainProvider = providerOverride ?? previousProvider;
 
+  // Resolve training steps for the target engine: explicit Advanced value
+  // (clamped) wins, else the quality preset (null = engine's own default).
+  const quality = parsed.data.quality ?? DEFAULT_QUALITY;
+  const steps =
+    parsed.data.steps != null
+      ? clampSteps(parsed.data.steps)
+      : resolveSteps(quality, provider);
+
   // Guard engine availability before touching credits.
   if (provider === "fal" && !isFalConfigured()) {
     return NextResponse.json(
@@ -140,6 +159,8 @@ export async function POST(
     newPhotos: Boolean(newImageUrls),
     imageCount: imageUrls.length,
     fromStatus: model.status,
+    quality,
+    steps,
   });
 
   // The wallet RPCs are service-role only (see docs/PLATFORM.md §3).
@@ -179,6 +200,7 @@ export async function POST(
       userId: user.id,
       modelName: model.name,
       imageUrls,
+      steps,
       serviceClient,
       log,
     });

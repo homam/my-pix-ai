@@ -27,6 +27,10 @@ export interface KickoffTrainingArgs {
   userId: string;
   modelName: string;
   imageUrls: string[];
+  // Resolved training-step count from the quality preset / Advanced control
+  // (lib/trainingPresets.ts). null/undefined = let the engine use its own
+  // default (Astria's portrait preset auto-tunes; fal falls back to Balanced).
+  steps?: number | null;
   // Service-role client — writes models + model_images and (fal) the zip.
   serviceClient: SupabaseClient<any, any, any>;
   log: Logger;
@@ -53,6 +57,7 @@ export async function kickoffTraining(
     userId,
     modelName,
     imageUrls,
+    steps,
     serviceClient,
     log,
   } = args;
@@ -91,8 +96,13 @@ export async function kickoffTraining(
     if (upErr) throw new Error(`zip upload failed: ${upErr.message}`);
     const zipUrl = getPublicUrl(serviceClient, zipPath);
 
-    log.info("fal_train_submit", { userId, modelId, zipBytes: zip.length });
-    const { requestId } = await falSubmitTraining({ imageDataUrl: zipUrl });
+    log.info("fal_train_submit", { userId, modelId, zipBytes: zip.length, steps });
+    const { requestId } = await falSubmitTraining({
+      imageDataUrl: zipUrl,
+      // fal needs a concrete number; if unspecified fall back to falSubmitTraining's
+      // Balanced default (null would break the "steps = 1500" default param).
+      ...(steps != null ? { steps } : {}),
+    });
 
     const { error: updateErr } = await serviceClient
       .from("models")
@@ -134,8 +144,10 @@ export async function kickoffTraining(
     modelName,
     imageCount: imageUrls.length,
     webhookConfigured: Boolean(webhookUrl),
+    steps: steps ?? null,
   });
-  const tune = await createTune({ title: modelName, imageUrls, webhookUrl });
+  // null steps = the portrait preset picks its own (known-good) count.
+  const tune = await createTune({ title: modelName, imageUrls, webhookUrl, steps: steps ?? null });
   log.info("astria_create_tune_success", { userId, modelId, astriaTuneId: tune.id });
 
   const { error: updateErr } = await serviceClient

@@ -16,6 +16,8 @@ import { CREDIT_COSTS } from "@/types";
 import { createClient } from "@/lib/supabase/client";
 import { STORAGE_BUCKET } from "@/lib/storage";
 import { EngineOption, type Engine } from "@/components/EngineOption";
+import { TrainingOptions } from "@/components/TrainingOptions";
+import { DEFAULT_QUALITY, type TrainingQuality } from "@/lib/trainingPresets";
 
 const MIN_PHOTOS = 10;
 const MAX_PHOTOS = 30;
@@ -49,6 +51,8 @@ export function NewModelForm({
   const router = useRouter();
   const [modelName, setModelName] = useState("");
   const [engine, setEngine] = useState<Engine>("astria");
+  const [quality, setQuality] = useState<TrainingQuality>(DEFAULT_QUALITY);
+  const [customSteps, setCustomSteps] = useState<number | null>(null);
   const [files, setFiles] = useState<UploadedFile[]>([]);
   const [phase, setPhase] = useState<Phase>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -267,6 +271,8 @@ export function NewModelForm({
           modelId,
           imageUrls: allUrls,
           modelName: modelName.trim(),
+          quality,
+          ...(customSteps != null ? { steps: customSteps } : {}),
         }),
       });
       const trainJson = await trainRes.json().catch(() => ({}));
@@ -366,10 +372,10 @@ export function NewModelForm({
         />
       </div>
 
-      {/* Engine / quality tier — only shown when the Ultra engine is enabled */}
+      {/* Engine tier — only shown when the Ultra engine is enabled */}
       {ultraAvailable && (
         <div>
-          <label className="block text-sm font-medium mb-2">Quality</label>
+          <label className="block text-sm font-medium mb-2">Engine</label>
           <div className="grid grid-cols-2 gap-3">
             <EngineOption
               selected={engine === "astria"}
@@ -389,6 +395,16 @@ export function NewModelForm({
           </div>
         </div>
       )}
+
+      {/* Training quality preset (+ Advanced steps) */}
+      <TrainingOptions
+        engine={engine}
+        quality={quality}
+        onQualityChange={setQuality}
+        customSteps={customSteps}
+        onCustomStepsChange={setCustomSteps}
+        disabled={submitting}
+      />
 
       {/* Dropzone */}
       <div>

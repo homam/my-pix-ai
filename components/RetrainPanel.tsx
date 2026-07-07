@@ -6,6 +6,8 @@ import { useDropzone } from "react-dropzone";
 import { Upload, X, Loader2, AlertCircle, RefreshCw } from "lucide-react";
 import { CREDIT_COSTS } from "@/types";
 import { EngineOption, type Engine } from "@/components/EngineOption";
+import { TrainingOptions } from "@/components/TrainingOptions";
+import { DEFAULT_QUALITY, type TrainingQuality } from "@/lib/trainingPresets";
 import { uploadTrainingPhotos } from "@/lib/photoUpload";
 
 const MIN_PHOTOS = 10;
@@ -42,6 +44,8 @@ export function RetrainPanel({
   const canReuse = storedPhotoCount >= MIN_PHOTOS;
 
   const [engine, setEngine] = useState<Engine>(currentProvider);
+  const [quality, setQuality] = useState<TrainingQuality>(DEFAULT_QUALITY);
+  const [customSteps, setCustomSteps] = useState<number | null>(null);
   const [source, setSource] = useState<PhotoSource>(canReuse ? "reuse" : "new");
   const [files, setFiles] = useState<Picked[]>([]);
   const [phase, setPhase] = useState<Phase>("idle");
@@ -125,6 +129,8 @@ export function RetrainPanel({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           provider: engine,
+          quality,
+          ...(customSteps != null ? { steps: customSteps } : {}),
           ...(imageUrls ? { imageUrls } : {}),
         }),
       });
@@ -176,6 +182,16 @@ export function RetrainPanel({
           )}
         </div>
       )}
+
+      {/* Training quality preset (+ Advanced steps) */}
+      <TrainingOptions
+        engine={engine}
+        quality={quality}
+        onQualityChange={setQuality}
+        customSteps={customSteps}
+        onCustomStepsChange={setCustomSteps}
+        disabled={submitting}
+      />
 
       {/* Photo source */}
       <div>
