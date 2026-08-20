@@ -7,7 +7,11 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --config verify/vitest.unit.config.ts",
+    "preflight": "vitest run --config verify/vitest.preflight.config.ts",
+    "smoke": "vitest run --config verify/vitest.smoke.config.ts",
+    "verify": "npm run preflight && npm run smoke"
   },
   "dependencies": {
     "@aionized/platform-client": "file:vendor/aionized-platform-client-0.1.1.tgz",
@@ -33,6 +37,7 @@
     "eslint": "^9",
     "eslint-config-next": "15.2.4",
     "tailwindcss": "^4.0.9",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^2.1.9"
   }
 }
