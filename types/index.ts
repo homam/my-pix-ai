@@ -113,14 +113,42 @@ export interface UserCredits {
   updated_at: string;
 }
 
+/**
+ * A raw row of the shared platform's ledger, `core.credit_transactions` — NOT a mypix table.
+ * (The old `public.credit_transactions` shape, with `amount`/`type`/`stripe_session_id`,
+ * belonged to the retired standalone project and no longer exists anywhere.)
+ *
+ * The ledger is deliberately generic: `reason`/`ref` are free text and are also written by
+ * ops/admin grants outside this app ("comp", "comp_reversal", "demo_provision", "starter"),
+ * so nothing may assume a closed set of values. `lib/credits.ts` owns the app's own convention
+ * and `creditHistoryRow()` turns any row into the UI shape below.
+ */
 export interface CreditTransaction {
   id: string;
   user_id: string;
-  amount: number;
-  type: "purchase" | "training" | "generation" | "refund";
-  stripe_session_id: string | null;
-  description: string;
+  delta: number;
+  reason: string;
+  ref: string | null;
   created_at: string;
+  brand: string;
+}
+
+export type CreditTransactionType =
+  | "purchase"
+  | "refund"
+  | "grant"
+  | "training"
+  | "generation"
+  | "garment"
+  | "spend";
+
+/** A ledger row reshaped for the credit-history table on /account. */
+export interface CreditHistoryRow {
+  id: string;
+  created_at: string;
+  type: CreditTransactionType;
+  description: string;
+  amount: number;
 }
 
 // Astria API types

@@ -2,16 +2,19 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Coins } from "lucide-react";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
-import { getBalance } from "@/lib/credits";
-import { CreditTransaction } from "@/types";
+import { getBalance, listCreditHistory } from "@/lib/credits";
+import { CreditHistoryRow, CreditTransactionType } from "@/types";
 import { SharesList, ShareRow } from "@/components/SharesList";
 import { DeleteAccountButton } from "@/components/DeleteAccountButton";
 
-const TYPE_LABELS: Record<CreditTransaction["type"], string> = {
+const TYPE_LABELS: Record<CreditTransactionType, string> = {
   purchase: "Purchase",
+  refund: "Refund",
+  grant: "Credit",
   training: "Training",
   generation: "Generation",
-  refund: "Refund",
+  garment: "Garment",
+  spend: "Usage",
 };
 
 export default async function AccountPage() {
@@ -21,14 +24,10 @@ export default async function AccountPage() {
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  const [balance, { data: txns }, { data: shares }] = await Promise.all([
+  const [balance, transactions, { data: shares }] = await Promise.all([
     getBalance(await createServiceClient(), user.id),
-    supabase
-      .from("credit_transactions")
-      .select("*")
-      .eq("user_id", user.id)
-      .order("created_at", { ascending: false })
-      .limit(100),
+    // The ledger lives in `core`, not `mypix` — see listCreditHistory().
+    listCreditHistory(supabase, user.id),
     supabase
       .from("shares")
       .select("slug, prompt, image_ids, view_count, created_at")
@@ -36,8 +35,6 @@ export default async function AccountPage() {
       .order("created_at", { ascending: false })
       .limit(100),
   ]);
-
-  const transactions = (txns as CreditTransaction[]) ?? [];
 
   // Build a thumbnail for each share from its first image.
   const shareRows: ShareRow[] = [];
@@ -113,7 +110,7 @@ export default async function AccountPage() {
                 </tr>
               </thead>
               <tbody>
-                {transactions.map((t) => (
+                {transactions.map((t: CreditHistoryRow) => (
                   <tr key={t.id} className="border-b border-white/5 last:border-b-0">
                     <td className="px-4 py-2.5 text-gray-400 whitespace-nowrap">
                       {new Date(t.created_at).toLocaleDateString("en-US", {
