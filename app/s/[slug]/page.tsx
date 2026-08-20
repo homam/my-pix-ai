@@ -2,7 +2,7 @@ import { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Sparkles } from "lucide-react";
-import { createServiceClient } from "@/lib/supabase/server";
+import { createAnonClient, createServiceClient } from "@/lib/supabase/server";
 import { BRAND, brandUrl } from "@/lib/brand";
 import { Logo } from "@/components/brand/Logo";
 
@@ -111,9 +111,23 @@ export default async function SharePage({
   const data = await loadShare(slug);
   if (!data) notFound();
 
-  // Fire-and-forget view increment. Don't await — render shouldn't wait on it.
-  const svc = await createServiceClient();
-  void svc.rpc("increment_share_view", { p_slug: slug });
+  // View increment. `mypix.increment_share_view` is SECURITY DEFINER and granted
+  // to anon + authenticated ONLY — service_role has no EXECUTE on it, so the
+  // service client that used to make this call got 42501 every time. Because the
+  // result was discarded (`void svc.rpc(...)`), the counter simply never moved
+  // and nothing anywhere said so; the preflight found it on 2026-08-20. Use the
+  // cookie-free anon client, which keeps this page on ISR, and read the error.
+  const anon = createAnonClient();
+  const { error: viewErr } = await anon.rpc("increment_share_view", {
+    p_slug: slug,
+  });
+  if (viewErr) {
+    console.error("increment_share_view failed", {
+      slug,
+      code: viewErr.code,
+      message: viewErr.message,
+    });
+  }
 
   const { share, images } = data;
   const isMulti = images.length > 1;

@@ -28,6 +28,31 @@ export async function createClient() {
   );
 }
 
+// A cookie-free ANON client. Two things make this its own factory rather than a
+// variant of createClient(): it reads no cookies, so it does not opt a page with
+// `export const revalidate` out of ISR; and it speaks as `anon`, which is the
+// role some SECURITY DEFINER helpers are granted to (mypix.increment_share_view
+// is executable by anon + authenticated and NOT by service_role, by design — the
+// public share page bumps its own view counter). Never use it for anything that
+// needs to identify the caller: it carries no user.
+export function createAnonClient() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!url || !key) {
+    throw new Error(
+      "createAnonClient: missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY"
+    );
+  }
+  return createSupabaseClient(url, key, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+      detectSessionInUrl: false,
+    },
+    db: { schema: "mypix" },
+  });
+}
+
 // IMPORTANT: do not use @supabase/ssr's createServerClient here. That helper
 // reads the user's session cookies and attaches the user's JWT to every
 // request, which overrides the service_role key — so requests run under the
