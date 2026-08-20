@@ -123,7 +123,14 @@ export async function POST(req: NextRequest) {
 
   try {
     const tune = await createGarmentTune({ title, imageUrl });
-    const { data: inserted, error: insertErr } = await supabase
+    // Service client, deliberately. astria_tune_id is an ENGINE IDENTITY (it is
+    // what `<faceid:…>` resolves to in /api/edit), and the only reason
+    // `authenticated` holds an INSERT grant on this table at all is this one
+    // statement — a grant that lets a hand-rolled PostgREST insert mint a
+    // "garment" carrying another user's FACE tune. Writing it as the service
+    // role lets platform migration 0023 revoke that grant outright. user_id
+    // comes from the verified session, which is the row boundary either way.
+    const { data: inserted, error: insertErr } = await serviceClient
       .from("garment_tunes")
       .insert({
         user_id: user.id,
