@@ -119,11 +119,14 @@ it('2 · every authenticated route renders for a signed-in user', async () => {
     if (res.status === 200) continue;
     const body = await res.text().catch(() => '');
     const location = res.headers.get('location');
-    broken.push(
-      `${route} → HTTP ${res.status}` +
-        (location ? ` → ${location}` : '') +
-        (res.status >= 500 ? ` · ${body.slice(0, 300).replace(/\s+/g, ' ')}` : ''),
-    );
+    // A Next.js error page is 40KB of chunk preloads with the actual cause only
+    // in the server log, so quoting it drowns the finding. Say what it is.
+    const detail = /__next_error__/.test(body)
+      ? ' · server-side render threw (Next.js error page); the cause is in the container log'
+      : res.status >= 500
+        ? ` · ${body.slice(0, 200).replace(/\s+/g, ' ')}`
+        : '';
+    broken.push(`${route} → HTTP ${res.status}${location ? ` → ${location}` : ''}${detail}`);
   }
   expect(
     broken,
@@ -214,8 +217,9 @@ it('5 · uploads a file through /api/upload and reads it back anonymously', asyn
   } | null;
   expect(
     res.status,
-    `POST /api/upload → ${res.status} ${JSON.stringify(body)} — this is where a non-existent ` +
-      'bucket surfaces as NoSuchBucket',
+    `POST /api/upload → ${res.status} ${JSON.stringify(body)} — this is where a wrong bucket ` +
+      'name surfaces: either NoSuchBucket, or "new row violates row-level security policy" ' +
+      'because the storage.objects policies are written against the real bucket id',
   ).toBe(200);
   expect(body?.path, 'no upload path returned').toBeTruthy();
   expect(body?.publicUrl, 'no public URL returned').toBeTruthy();

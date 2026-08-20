@@ -10,3 +10,5 @@ supabase
 .DS_Store
 Dockerfile
 .dockerignore
+verify
+docs

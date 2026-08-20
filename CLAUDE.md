@@ -176,6 +176,61 @@ Vercel, and `http://localhost:4871` callbacks.
 A legacy Vercel deployment exists at https://my-pix-ai-opal.vercel.app (same Supabase DB)
 but is **frozen — do not deploy to it**; App Runner is the only deploy target.
 
+**Deploys are gated (2026-08-20).** `scripts/deploy.sh` runs `npm run preflight` **before it
+builds anything** (override only with `DEPLOY_ACK_PREFLIGHT=1`, for shipping the fix *for* a
+preflight finding), captures the previous ECR digest before the push, and after each rollout
+checks brand identity via `/api/health` → `/api/health ok:true` → `npm run smoke` as an account
+from **that brand's entity**. Any failed gate prints ready-to-paste rollback commands. Two
+lessons are baked in: identify the live image from `/api/health`, not by grepping page HTML (the
+HTML check gave false `ROLLOUT FAILED` alarms twice on the sibling product); and the smoke user
+must belong to the brand's entity or it fails `ENTITY_MISMATCH` for reasons unrelated to the
+deploy. See **[docs/VERIFICATION.md](docs/VERIFICATION.md)**.
+
+---
+
+## Verification (read before changing anything that touches the platform)
+
+**[docs/VERIFICATION.md](docs/VERIFICATION.md)** is the strategy; `verify/` is the
+implementation. It exists because on 2026-08-19/20 three defects each broke a core journey in
+production undetected: `getBalance()` was passed the RLS client and, being awaited in the
+`(dashboard)` layout, took `/dashboard` `/studio` `/account` `/models/new` to **500 on both
+brands** while `/` stayed 200; `STORAGE_BUCKET` named `user-uploads`, which does not exist (the
+real bucket is `mypix`); and `/account` queried `mypix.credit_transactions` (the ledger is
+`core.credit_transactions`) and swallowed the error, rendering "No transactions yet" forever.
+All three were invisible because the failures were swallowed and every gate we had was
+structural — HTTP 200, page renders, brand string present.
+
+```bash
+npm test            # LAYER 3 — pure logic; pins the exact error payloads of those incidents
+npm run preflight   # LAYER 1 — every table/bucket/RPC/env the code names exists and is
+                    #   reachable BY THE ROLE THAT USES IT (read-only, ~12s)
+npm run smoke       # LAYER 2 — authenticated journeys against a running app
+                    #   (VERIFY_TARGET=https://… npm run smoke for a deployment)
+npm run verify      # preflight + smoke
+```
+
+Rules that follow from that:
+
+- **A resource name must be statically resolvable.** The preflight derives the expected
+  table/bucket/RPC list by scanning the source (`verify/src/inventory.ts`), so it cannot rot —
+  but `storage.from(someVariable)` breaks that and fails the preflight by design. Keep names in
+  `const`s (`STORAGE_BUCKET` in `lib/storage.ts`) or string literals.
+- **Never ignore a Supabase `error` field.** Every 2026 outage presented as "nothing happens".
+  Read it back and surface it — `listCreditHistory` throws rather than returning `[]`.
+- **The right client is part of the contract.** `getBalance`/`deductCredits`/`addCredits` need
+  the **service-role** client (the `core.*` wallet RPCs are service_role-only since platform
+  migration 0021); `listCreditHistory` takes the **RLS** client. `verify/src/credit-clients.ts`
+  derives that classification from `lib/credits.ts` itself and checks every call site, and the
+  preflight separately asserts those RPCs stay **unreachable from `anon`/`authenticated`** —
+  they are SECURITY DEFINER with no internal auth check, so a browser-reachable grant would let
+  anyone mint credits.
+- **New journey → new Layer 2 step.** Preflight only proves reachability per role; write paths
+  and rendering are covered functionally in `verify/src/smoke.spec.ts`.
+- **Test accounts are per brand** — accounts never cross entities. `mypix` → entity1
+  (`demo@mobilesparkcreations.com`), `glowshot` → entity2
+  (`verify+glowshot@mobilesparkcreations.com`). The mapping is in `verify/src/config.ts` and
+  `deploy/brands/*.env`.
+
 ---
 
 ## How the Astria webhook works (and how we avoid needing it locally)
@@ -247,6 +302,9 @@ Either way, polling remains as a fallback — webhooks can be lost, so you alway
 ---
 
 ## Key files
+
+- `verify/` — the executable verification layers (preflight / smoke / unit); see docs/VERIFICATION.md
+- `app/api/health/route.ts` — the running container's dependency self-check, read by the deploy gate
 - `lib/brand.ts` — white-label brand registry (name, SEO copy, support email, legal entity, credit packs, color theme); selected by `NEXT_PUBLIC_BRAND_KEY`. Brands: `mypix` (purple/pink), `glowshot` (amber/rose, service `glowshot` on App Runner)
 - `components/brand/Logo.tsx` — swappable brand mark + wordmark (all header/footer logos render this)
 - `app/icon.tsx` — favicon generated from `BRAND.theme` at build time

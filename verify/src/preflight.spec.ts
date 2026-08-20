@@ -229,17 +229,35 @@ for (const t of inventory.tables) {
 describe('schema access', () => {
   for (const [schema, roles] of schemaRoles) {
     for (const role of roles) {
-      const witness = inventory.tables.find((t) => t.schema === schema && t.roles.includes(role))!;
+      const witnesses = inventory.tables.filter(
+        (t) => t.schema === schema && t.roles.includes(role),
+      );
       it(`role "${role}" can use schema "${schema}"`, async () => {
         if (role === 'authenticated' && !session) throw new Error(`no session: ${sessionError}`);
-        const r = await selectOne(creds, role, schema, witness.table, session?.accessToken);
-        assertOk(
-          diagnoseTableProbe(r, {
+        // Try each table the code reads from this schema. A single witness is
+        // not enough: if that one table happens to be misnamed, the failure
+        // reads as "the role cannot use the schema", which sends the reader
+        // after a grant that is not missing. Only a 42501 proves a grant
+        // problem; a missing relation is the `tables` section's business.
+        const missing: string[] = [];
+        for (const t of witnesses) {
+          const r = await selectOne(creds, role, schema, t.table, session?.accessToken);
+          const v = diagnoseTableProbe(r, {
             schema,
-            table: witness.table,
+            table: t.table,
             role,
-            site: `${witness.refs[0]!.file}:${witness.refs[0]!.line}`,
-          }),
+            site: `${t.refs[0]!.file}:${t.refs[0]!.line}`,
+          });
+          if (v.ok) return;
+          if (r.code === '42P01' || r.code === 'PGRST205') {
+            missing.push(`${schema}.${t.table}`);
+            continue;
+          }
+          assertOk(v);
+        }
+        throw new Error(
+          `none of the tables this code reads from schema "${schema}" as ${role} exist: ` +
+            `${missing.join(', ')} — see the per-table failures below for each call site`,
         );
       });
     }
