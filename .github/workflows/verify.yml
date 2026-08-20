@@ -1,0 +1,110 @@
+# Verification layers (docs/VERIFICATION.md).
+#
+#   unit       every push/PR   pure logic, no credentials          ~seconds
+#   preflight  every push/PR   platform dependencies exist and are ~15s
+#                              reachable by the role that uses them
+#   smoke      schedule +      the critical journeys, against the  ~30s
+#              manual          live deployment
+#
+# The deploy gate in scripts/deploy.sh runs preflight + smoke too; this workflow
+# is what catches a regression BEFORE someone reaches for deploy.sh, and what
+# notices production breaking on its own. A dependency can rot with no deploy at
+# all — a revoked grant, a deleted bucket, an expired key — which is exactly how
+# the wallet-RPC lockdown turned a working dashboard into a 500 for every user.
+name: verify
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # Hourly production smoke: the 2026-08-19 outage was undetected until a human
+    # noticed. Nothing was watching the signed-in half of the product at all.
+    - cron: '23 * * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: verify-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit:
+    name: typecheck + unit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+
+  preflight:
+    name: platform preflight (${{ matrix.brand }})
+    runs-on: ubuntu-latest
+    # A fork PR has no secrets; skip rather than fail confusingly.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - brand: mypix
+            url: https://wy7kp3ie3e.eu-central-1.awsapprunner.com
+            userVar: VERIFY_USER_EMAIL_MYPIX
+          - brand: glowshot
+            url: https://pyt65zu7sr.eu-central-1.awsapprunner.com
+            userVar: VERIFY_USER_EMAIL_GLOWSHOT
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run preflight
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          NEXT_PUBLIC_APP_URL: ${{ matrix.url }}
+          NEXT_PUBLIC_BRAND_KEY: ${{ matrix.brand }}
+          # Asserted as PRESENT, never used, by the preflight.
+          ASTRIA_API_KEY: ${{ secrets.ASTRIA_API_KEY }}
+          # Brands belong to entities and accounts never cross them
+          # (core.bind_entity), so each brand needs its OWN provisioned test
+          # account — reusing one across brands fails with ENTITY_MISMATCH, which
+          # is not a defect. verify/src/config.ts has the same mapping as a
+          # fallback, so an unset variable still picks the right account.
+          VERIFY_USER_EMAIL: ${{ vars[matrix.userVar] }}
+
+  smoke:
+    name: production journeys (${{ matrix.brand }})
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - brand: mypix
+            url: https://wy7kp3ie3e.eu-central-1.awsapprunner.com
+            userVar: VERIFY_USER_EMAIL_MYPIX
+          - brand: glowshot
+            url: https://pyt65zu7sr.eu-central-1.awsapprunner.com
+            userVar: VERIFY_USER_EMAIL_GLOWSHOT
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run smoke
+        env:
+          VERIFY_TARGET: ${{ matrix.url }}
+          NEXT_PUBLIC_BRAND_KEY: ${{ matrix.brand }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          VERIFY_USER_EMAIL: ${{ vars[matrix.userVar] }}
