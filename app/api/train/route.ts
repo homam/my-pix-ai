@@ -3,6 +3,7 @@ import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { kickoffTraining } from "@/lib/training";
 import { isFalConfigured } from "@/lib/fal";
 import { deductCredits, addCredits } from "@/lib/credits";
+import { storagePathFromUrl } from "@/lib/storage";
 import { CREDIT_COSTS } from "@/types";
 import { makeLogger, errInfo } from "@/lib/log";
 import {
@@ -109,6 +110,27 @@ export async function POST(req: NextRequest) {
         reqId: log.reqId,
       },
       { status: 404 }
+    );
+  }
+
+  // Every training photo must live in the caller's own storage tree.
+  //
+  // `imageUrls` is raw request input: without this, the URLs go straight to
+  // Astria's createTune (train a likeness from anyone's photos, including
+  // another user's — the mypix bucket is public and keyed
+  // `<user_id>/<model_id>/<uuid>.jpg`) and, on the fal path, are fetched
+  // SERVER-SIDE by lib/training.ts to build the zip, which turns an unvalidated
+  // URL into an SSRF against anything the container can reach. /api/models/[id]/
+  // retry and /api/garments already applied this guard; this route did not.
+  const badUrl = imageUrls.find((u) => {
+    const path = storagePathFromUrl(u);
+    return !path || !path.startsWith(`${user.id}/`);
+  });
+  if (badUrl) {
+    log.warn("disallowed_image_url", { userId: user.id, modelId, url: badUrl });
+    return NextResponse.json(
+      { error: "Image URL not allowed", reqId: log.reqId },
+      { status: 400 }
     );
   }
 

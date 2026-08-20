@@ -44,9 +44,16 @@ export async function DELETE(
 
   const svc = await createServiceClient();
 
-  // Remove the mirrored storage object if the url points at our bucket.
+  // Remove the mirrored storage object if the url points at our bucket AND at
+  // this caller's own folder. `generated_images.url` is service-role-written
+  // today (authenticated has SELECT only), so the prefix check is redundant —
+  // but a storage path built out of a row value is exactly the shape that goes
+  // wrong the day a grant widens, and re-deriving the owner from the session is
+  // free. Same reasoning as lib/identity.ts.
   const path = storagePathFromUrl(image.url);
-  if (path) {
+  if (path && !path.startsWith(`${user.id}/`)) {
+    log.warn("image_url_outside_owner_tree", { userId: user.id, imageId: id, path });
+  } else if (path) {
     try {
       await svc.storage.from(STORAGE_BUCKET).remove([path]);
     } catch (err) {
