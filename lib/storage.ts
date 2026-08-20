@@ -1,8 +1,15 @@
-// Supabase Storage wrapper. Bucket `user-uploads` must exist (created via migration).
+// Supabase Storage wrapper.
 import { SupabaseClient } from "@supabase/supabase-js";
 import crypto from "crypto";
 
-export const STORAGE_BUCKET = "user-uploads";
+// The bucket is named after the PRODUCT on the shared aionized platform project — every
+// product gets one product-prefixed bucket, created by its onboarding migration (0009 for
+// mypix). It is NOT the generic "user-uploads" the standalone-project scaffold used; that
+// bucket does not exist on the shared project and every call against it 404s NoSuchBucket.
+// storage.objects policies keyed to this bucket: "mypix: upload own folder" (INSERT) and
+// "mypix: read own folder" (SELECT) on (storage.foldername(name))[1] = auth.uid(), plus
+// "mypix: public read" for anon SELECT — all of which match the {userId}/... key layout below.
+export const STORAGE_BUCKET = "mypix";
 
 export interface SignedUpload {
   path: string;
@@ -48,7 +55,8 @@ export function getPublicUrl(supabase: SupabaseClient<any, any, any>, path: stri
  * Extracts the in-bucket path from a public storage URL, or null if the URL
  * doesn't point at our bucket (e.g. a fallback Astria URL when mirroring
  * failed). Public URLs look like
- * `<base>/storage/v1/object/public/user-uploads/<path>`.
+ * `<base>/storage/v1/object/public/<bucket>/<path>` — the marker is built from
+ * STORAGE_BUCKET, so it tracks the bucket name automatically.
  */
 export function storagePathFromUrl(url: string): string | null {
   const marker = `/storage/v1/object/public/${STORAGE_BUCKET}/`;

@@ -211,7 +211,7 @@ Either way, polling remains as a fallback — webhooks can be lost, so you alway
 
 ## Key flows
 
-1. **Create model**: Upload 15–25 photos → client gets a signed upload URL per file from `/api/upload` → uploads directly to Supabase Storage (`user-uploads` bucket) → `/api/train` deducts 20 credits and calls Astria to create a tune.
+1. **Create model**: Upload 15–25 photos → client gets a signed upload URL per file from `/api/upload` → uploads directly to Supabase Storage (`mypix` bucket) → `/api/train` deducts 20 credits and calls Astria to create a tune.
 2. **Training**: Astria trains FLUX.1 LoRA (~10 min). UI polls `/api/models/[id]/refresh` for status. On success, model status flips to `ready`.
 3. **Generate**: `/api/generate` calls Astria with the user's tune ID and a prompt (auto-prepended with `ohwx person` trigger token). Results are stored in `generated_images`.
 4. **Studio edits**: `/studio` hosts five tools, all going through `POST /api/edit` (discriminated by `mode`):
@@ -330,7 +330,7 @@ so each engine trains its own LoRA. fal training ≈ $6.40/model vs Astria ≈ $
 **fal lifecycle** (mirrors the Astria polling flow):
 1. `POST /api/models` stores `provider`. `POST /api/train` (fal branch): fetches
    all photos, builds a store-method zip (`lib/zip.ts`, no dependency), uploads
-   it to the `user-uploads` bucket, and calls `falSubmitTraining` → stores
+   it to the `mypix` bucket, and calls `falSubmitTraining` → stores
    `fal_request_id`, status `training`.
 2. `/api/models/[id]/refresh` polls `falTrainingStatus`; on COMPLETED it writes
    `fal_lora_url` + status `ready`, on FAILED it refunds. No webhook needed locally.
