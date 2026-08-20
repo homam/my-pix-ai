@@ -1,4 +1,5 @@
 import type { AstriaTune, AstriaPrompt } from "@/types";
+import { serverOwnedTuneId, type TuneId } from "@/lib/identity";
 
 const API_BASE = "https://api.astria.ai";
 // Base model to fine-tune LoRAs on. Defaults to Astria's FLUX.1 dev
@@ -6,8 +7,11 @@ const API_BASE = "https://api.astria.ai";
 // newer base (e.g. a FLUX.2 base) the moment Astria publishes its gallery ID —
 // no code change or redeploy of logic required. Exported so studio routes
 // (edit/garments) can reference the same base id.
-export const FLUX_BASE_TUNE_ID =
-  Number(process.env.ASTRIA_BASE_TUNE_ID) || 1504944;
+// Server-owned: it comes from build config, never from a user-writable row, so
+// it is minted as a verified TuneId directly (see lib/identity.ts).
+export const FLUX_BASE_TUNE_ID: TuneId = serverOwnedTuneId(
+  Number(process.env.ASTRIA_BASE_TUNE_ID) || 1504944
+);
 
 function headers() {
   return {
@@ -148,7 +152,9 @@ export async function createTune(params: CreateTuneParams): Promise<AstriaTune> 
 }
 
 export interface GenerateParams {
-  tuneId: number;
+  // Verified: only lib/identity.ts can mint a TuneId, so a raw
+  // `models.astria_tune_id` cannot reach Astria without an ownership check.
+  tuneId: TuneId;
   prompt: string;
   numImages?: number;
   webhookUrl?: string;
@@ -264,7 +270,8 @@ export async function generateImages(params: GenerateParams): Promise<AstriaProm
 export interface EditImageParams {
   // Tune the prompt is posted against: the user's LoRA tune for identity-aware
   // edits, or FLUX_BASE_TUNE_ID for model-free edits (restore, plain inpaint).
-  tuneId: number;
+  // Verified — see GenerateParams.tuneId.
+  tuneId: TuneId;
   // Full prompt text, sent verbatim — caller is responsible for trigger
   // phrases, <lora:...>/<faceid:...> tokens, and --outpaint args.
   text: string;
@@ -397,7 +404,7 @@ export async function createGarmentTune(params: {
 }
 
 export async function listPrompts(
-  tuneId: number,
+  tuneId: TuneId,
   { offset = 0 }: { offset?: number } = {}
 ): Promise<AstriaPrompt[]> {
   const res = await fetch(
@@ -412,7 +419,7 @@ export async function listPrompts(
   return res.json();
 }
 
-export async function getTune(tuneId: number): Promise<AstriaTune> {
+export async function getTune(tuneId: TuneId): Promise<AstriaTune> {
   const res = await fetch(`${API_BASE}/tunes/${tuneId}`, {
     headers: headers(),
   });
@@ -425,7 +432,7 @@ export async function getTune(tuneId: number): Promise<AstriaTune> {
 }
 
 export async function getPrompt(
-  tuneId: number,
+  tuneId: TuneId,
   promptId: number
 ): Promise<AstriaPrompt> {
   const res = await fetch(`${API_BASE}/tunes/${tuneId}/prompts/${promptId}`, {
@@ -444,7 +451,7 @@ export async function getPrompt(
  * FLUX LoRA with 4 images usually completes in 15–40s.
  */
 export async function waitForPrompt(
-  tuneId: number,
+  tuneId: TuneId,
   promptId: number,
   // 100s, not more: App Runner cuts requests at a hard 120s — timing out inside
   // that window lets the caller's refund path run instead of a severed socket.
@@ -457,4 +464,20 @@ export async function waitForPrompt(
     await new Promise((r) => setTimeout(r, intervalMs));
   }
   throw new Error(`Astria prompt ${promptId} did not complete within ${timeoutMs}ms`);
+}
+
+/**
+ * Astria prompt tokens that name a tune inline. They are the SECOND way a tune
+ * id reaches the engine (the first is `tuneId` on the request), and the
+ * dangerous one, because they are plain string interpolation that no signature
+ * would otherwise guard. Taking a verified TuneId makes
+ * `<faceid:${garment.astria_tune_id}:1>` — the virtual try-on identity
+ * injection — a compile error.
+ */
+export function loraToken(tuneId: TuneId, scale = 1.0): string {
+  return `<lora:${tuneId}:${scale}>`;
+}
+
+export function faceIdToken(tuneId: TuneId, scale = 1): string {
+  return `<faceid:${tuneId}:${scale}>`;
 }

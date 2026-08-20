@@ -1,11 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import {
   editImage,
   waitForPrompt,
+  faceIdToken,
+  loraToken,
   FLUX_BASE_TUNE_ID,
   AstriaTuneExpiredError,
 } from "@/lib/astria";
+import {
+  ForeignIdentityError,
+  verifyGarmentTuneId,
+  verifyModelIdentity,
+  type TuneId,
+} from "@/lib/identity";
 import { deductCredits, addCredits } from "@/lib/credits";
 import { mirrorImageToStorage, storagePathFromUrl } from "@/lib/storage";
 import { makeLogger, errInfo } from "@/lib/log";
@@ -102,7 +111,9 @@ function isAllowedImageUrl(url: string, userId: string): boolean {
 }
 
 interface AstriaCall {
-  tuneId: number;
+  // Verified (lib/identity.ts): either FLUX_BASE_TUNE_ID or a tune whose
+  // ownership was established below. Nothing else type-checks.
+  tuneId: TuneId;
   params: Parameters<typeof editImage>[0];
   fullPrompt: string;
   kind: ImageKind;
@@ -115,10 +126,17 @@ interface AstriaCall {
 async function buildCall(
   req: EditRequest,
   userId: string,
-  supabase: Awaited<ReturnType<typeof createClient>>
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  serviceClient: SupabaseClient<any, any, any>
 ): Promise<AstriaCall | { error: string; status: number }> {
   // Resolve the user's tune for modes that involve their likeness.
-  let userTuneId: number | null = null;
+  //
+  // The `.eq("user_id", …)` filter proves the ROW is theirs, not that the TUNE
+  // is: `authenticated` can INSERT a models row naming any tune id at all (the
+  // INSERT grant covers every column, and 0022 only narrowed UPDATE). So the id
+  // goes through verifyModelIdentity before it can be used — which is also the
+  // only way to obtain the branded TuneId that editImage / loraToken demand.
+  let userTuneId: TuneId | null = null;
   if ("modelId" in req && req.modelId) {
     const { data: model } = await supabase
       .from("models")
@@ -130,7 +148,12 @@ async function buildCall(
     if (!model?.astria_tune_id) {
       return { error: "Model not found or not ready", status: 404 };
     }
-    userTuneId = model.astria_tune_id;
+    const verified = await verifyModelIdentity({
+      serviceClient,
+      userId,
+      model: { id: req.modelId, astria_tune_id: model.astria_tune_id },
+    });
+    userTuneId = verified.astriaTuneId;
   }
 
   switch (req.mode) {
@@ -255,11 +278,21 @@ async function buildCall(
       if (!garment?.astria_tune_id || garment.status !== "ready") {
         return { error: "Garment not found or not ready", status: 404 };
       }
+      // garment_tunes is NOT covered by migration 0022 and `authenticated`
+      // holds a table-level INSERT grant on it, so a hand-rolled insert can
+      // present another user's FACE tune as a "garment" — <faceid:…> would then
+      // paste that person into the render. Verify before composing the token.
+      const garmentTuneId = await verifyGarmentTuneId({
+        serviceClient,
+        userId,
+        garmentId: req.garmentId,
+        tuneId: garment.astria_tune_id,
+      });
 
       const scene =
         req.prompt || "fashion editorial, plain studio background, waist up shot";
       const text =
-        `<lora:${userTuneId}:1.0> <faceid:${garment.astria_tune_id}:1> ` +
+        `${loraToken(userTuneId!)} ${faceIdToken(garmentTuneId)} ` +
         `ohwx person wearing the ${garment.title}, ${scene}`;
       return {
         tuneId: FLUX_BASE_TUNE_ID,
@@ -341,7 +374,32 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  const built = await buildCall(input, user.id, supabase);
+  // Service client: engine-identity ownership checks need to see OTHER users'
+  // rows (RLS would hide exactly the row that proves a theft), and the wallet
+  // RPCs are service-role only (see docs/PLATFORM.md §3).
+  const serviceClient = await createServiceClient();
+
+  let built: Awaited<ReturnType<typeof buildCall>>;
+  try {
+    built = await buildCall(input, user.id, supabase, serviceClient);
+  } catch (err) {
+    const foreign = err instanceof ForeignIdentityError;
+    log.error(foreign ? "foreign_identity_blocked" : "identity_check_failed", {
+      userId: user.id,
+      mode: input.mode,
+      ...(foreign ? (err as ForeignIdentityError).info() : errInfo(err)),
+    });
+    return NextResponse.json(
+      {
+        error: foreign
+          ? "A trained asset this edit names does not belong to you."
+          : "Could not verify this edit's engine identity",
+        code: foreign ? "foreign_identity" : "identity_check_failed",
+        reqId: log.reqId,
+      },
+      { status: foreign ? 403 : 500 }
+    );
+  }
   if ("error" in built) {
     log.warn("build_call_rejected", { userId: user.id, mode: input.mode, ...built });
     return NextResponse.json(
@@ -349,9 +407,6 @@ export async function POST(req: NextRequest) {
       { status: built.status }
     );
   }
-
-  // The wallet RPCs are service-role only (see docs/PLATFORM.md §3).
-  const serviceClient = await createServiceClient();
   const { success } = await deductCredits(
     serviceClient,
     user.id,
@@ -401,7 +456,6 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const serviceClient = await createServiceClient();
     const modelId = "modelId" in input ? (input.modelId ?? null) : null;
 
     const mirrored = await Promise.all(
@@ -477,7 +531,6 @@ export async function POST(req: NextRequest) {
       await refund("tune expired");
       let modelExpired = false;
       if (err.tuneId != null) {
-        const serviceClient = await createServiceClient();
         const { data: marked, error: markErr } = await serviceClient
           .from("models")
           .update({ status: "expired", updated_at: new Date().toISOString() })

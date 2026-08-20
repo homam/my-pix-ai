@@ -13,6 +13,8 @@
 //       https://fal.ai/models/fal-ai/flux-2/lora
 //       https://fal.ai/models/fal-ai/flux-2-trainer
 
+import type { FalRequestId, LoraUrl } from "@/lib/identity";
+
 const QUEUE_BASE = "https://queue.fal.run";
 
 const GEN_MODEL = "fal-ai/flux-2/lora";
@@ -148,7 +150,11 @@ async function waitForFalResult<T>(
 
 export interface FalGenerateParams {
   prompt: string; // user prompt + realism suffix; trigger is prepended here
-  loraUrl: string; // the person's fal-trained FLUX.2 LoRA weights URL
+  // The person's fal-trained FLUX.2 LoRA weights URL. Verified: only
+  // lib/identity.ts can mint a LoraUrl, so a `models.fal_lora_url` read off a
+  // row cannot become `loras[].path` (a URL fal fetches as model weights)
+  // without an ownership + host check.
+  loraUrl: LoraUrl;
   loraScale?: number;
   numImages?: number;
   seed?: number;
@@ -271,7 +277,9 @@ export interface FalTrainingStatus {
  * weights URL to persist on the model. Used by the refresh polling endpoint.
  */
 export async function falTrainingStatus(
-  requestId: string
+  // Verified — a training job id identifies whose LoRA the result URL is, and
+  // /api/models/[id]/refresh writes that URL onto the caller's row.
+  requestId: FalRequestId
 ): Promise<FalTrainingStatus> {
   // The trainer's status/result URLs reconstruct correctly from its own model
   // id (verified: fal-ai/flux-2-trainer/requests/<id>[/status]). We only keep

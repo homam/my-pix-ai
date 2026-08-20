@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { listPrompts } from "@/lib/astria";
 import { mirrorImageToStorage } from "@/lib/storage";
+import { ForeignIdentityError, verifyModelIdentity } from "@/lib/identity";
 import { Model } from "@/types";
 
 // Syncing many historical prompts can take a while when mirroring images.
@@ -42,6 +43,39 @@ export async function POST(
 
   const serviceClient = await createServiceClient();
 
+  // Ownership of the ROW is not ownership of the TUNE, and listPrompts() pulls
+  // every image ever rendered from that tune into this user's gallery — so a
+  // forged row naming someone else's tune would exfiltrate their photos. Verify
+  // first; it is also the only way to get the TuneId listPrompts() requires.
+  // See lib/identity.ts.
+  let tuneId;
+  try {
+    ({ astriaTuneId: tuneId } = await verifyModelIdentity({
+      serviceClient,
+      userId: user.id,
+      model: { id, astria_tune_id: m.astria_tune_id },
+    }));
+  } catch (err) {
+    const foreign = err instanceof ForeignIdentityError;
+    console.error("[sync]", foreign ? "foreign_identity_blocked" : "identity_check_failed", {
+      userId: user.id,
+      modelId: id,
+      ...(foreign ? (err as ForeignIdentityError).info() : { message: String(err) }),
+    });
+    return NextResponse.json(
+      {
+        error: foreign
+          ? "This model's engine identity does not belong to you."
+          : "Could not verify this model's engine identity",
+        code: foreign ? "foreign_identity" : "identity_check_failed",
+      },
+      { status: foreign ? 403 : 500 }
+    );
+  }
+  if (!tuneId) {
+    return NextResponse.json({ error: "Model has no Astria tune yet" }, { status: 400 });
+  }
+
   // Skip anything already in DB — dedupe on astria_source_url and on url
   // (old rows created before mirroring was added still have the Astria URL there).
   const { data: existing } = await serviceClient
@@ -59,7 +93,7 @@ export async function POST(
   const allPrompts = [];
   let offset = 0;
   for (let page = 0; page < 20; page++) {
-    const batch = await listPrompts(m.astria_tune_id, { offset });
+    const batch = await listPrompts(tuneId, { offset });
     if (!batch || batch.length === 0) break;
     allPrompts.push(...batch);
     if (batch.length < 20) break;

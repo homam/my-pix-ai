@@ -3,6 +3,7 @@ import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { getTune } from "@/lib/astria";
 import { falTrainingStatus } from "@/lib/fal";
 import { addCredits } from "@/lib/credits";
+import { ForeignIdentityError, verifyModelIdentity } from "@/lib/identity";
 import { CREDIT_COSTS } from "@/types";
 
 // Manual refresh: polls the training engine for status. Use as a fallback when
@@ -37,15 +38,52 @@ export async function POST(
     return NextResponse.json({ status: model.status });
   }
 
+  // The row is the caller's; the training job it names may not be. A forged
+  // models row (INSERT still writes every column — see lib/identity.ts) naming
+  // another user's fal_request_id would have this route fetch THEIR trained
+  // LoRA URL and write it onto the caller's row, which is a complete likeness
+  // theft with no Astria/fal spend at all. Verify before polling either engine;
+  // the branded ids returned here are also what getTune / falTrainingStatus
+  // demand, so the check cannot be dropped without a compile error.
+  const service = await createServiceClient();
+  let identity;
+  try {
+    identity = await verifyModelIdentity({
+      serviceClient: service,
+      userId: user.id,
+      model: {
+        id,
+        astria_tune_id: model.astria_tune_id,
+        fal_lora_url: model.fal_lora_url ?? null,
+        fal_request_id: model.fal_request_id ?? null,
+      },
+    });
+  } catch (err) {
+    const foreign = err instanceof ForeignIdentityError;
+    console.error("[refresh]", foreign ? "foreign_identity_blocked" : "identity_check_failed", {
+      userId: user.id,
+      modelId: id,
+      ...(foreign ? (err as ForeignIdentityError).info() : { message: String(err) }),
+    });
+    return NextResponse.json(
+      {
+        error: foreign
+          ? "This model's engine identity does not belong to you."
+          : "Could not verify this model's engine identity",
+        code: foreign ? "foreign_identity" : "identity_check_failed",
+      },
+      { status: foreign ? 403 : 500 }
+    );
+  }
+
   // FLUX.2 (fal) polling: check the training job; on completion persist the
   // trained LoRA weights URL, on failure refund the training credits.
   if (model.provider === "fal") {
-    if (!model.fal_request_id) {
+    if (!identity.falRequestId) {
       return NextResponse.json({ error: "Model not found" }, { status: 404 });
     }
     try {
-      const { status, loraUrl } = await falTrainingStatus(model.fal_request_id);
-      const service = await createServiceClient();
+      const { status, loraUrl } = await falTrainingStatus(identity.falRequestId);
 
       if (status === "COMPLETED" && loraUrl) {
         await service
@@ -75,12 +113,12 @@ export async function POST(
     }
   }
 
-  if (!model.astria_tune_id) {
+  if (!identity.astriaTuneId) {
     return NextResponse.json({ error: "Model not found" }, { status: 404 });
   }
 
   try {
-    const tune = await getTune(model.astria_tune_id);
+    const tune = await getTune(identity.astriaTuneId);
     const isSuccess = !!tune.trained_at;
 
     // If still training on Astria's side, just report current status
@@ -89,7 +127,6 @@ export async function POST(
     }
 
     const newStatus = isSuccess ? "ready" : "failed";
-    const service = await createServiceClient();
 
     await service
       .from("models")

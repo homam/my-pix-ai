@@ -9,15 +9,18 @@
 
 import { generateImages, waitForPrompt } from "@/lib/astria";
 import { falGenerateFlux2, isFalConfigured } from "@/lib/fal";
+import type { VerifiedIdentity } from "@/lib/identity";
 
 export type ProviderId = "astria" | "fal";
 
 // The person's identity handles across backends. Astria uses a numeric tune id;
 // fal uses a hosted LoRA weights URL. A model may have one or both.
-export interface ProviderModel {
-  astriaTuneId: number | null;
-  falLoraUrl: string | null;
-}
+//
+// This is deliberately `VerifiedIdentity` and not a plain shape: the identifiers
+// are branded types only lib/identity.ts can mint, so a route cannot build one
+// out of a `mypix.models` row it just read. Rendering someone else's likeness
+// stops being a check a future route might forget and becomes a type error.
+// See lib/identity.ts for the failure mode.
 
 // One provider-agnostic render request. The route builds this from validated
 // input + the chosen realism preset; each adapter maps it to its own API.
@@ -50,7 +53,7 @@ export interface RenderedImage {
 export interface ImageProvider {
   id: ProviderId;
   /** Submit one render and resolve once the images are ready. */
-  render(model: ProviderModel, req: RenderRequest): Promise<RenderedImage[]>;
+  render(model: VerifiedIdentity, req: RenderRequest): Promise<RenderedImage[]>;
 }
 
 // fal's image_size enum keyed by our aspect-ratio strings. Anything unmapped

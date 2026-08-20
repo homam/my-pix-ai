@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { getProvider } from "@/lib/providers";
 import { AstriaTuneExpiredError } from "@/lib/astria";
+import {
+  ForeignIdentityError,
+  verifyModelIdentity,
+  type VerifiedIdentity,
+} from "@/lib/identity";
 import { deductCredits, addCredits } from "@/lib/credits";
 import { mirrorImageToStorage } from "@/lib/storage";
 import { makeLogger, errInfo } from "@/lib/log";
@@ -154,9 +159,15 @@ export async function POST(req: NextRequest) {
   const effInpaintFaces = inpaintFaces || boostLikeness;
   const effHiresFix = hiresFix || realism === "polished";
 
-  // Verify model belongs to user and is ready. select("*") tolerates an
-  // un-migrated DB (provider / fal_lora_url just come back undefined → astria),
-  // so the default FLUX.1 path keeps working before migration 002 is applied.
+  // Load the model row. This proves the ROW belongs to the caller — it does NOT
+  // prove the TUNE does, and `authenticated` can INSERT a row carrying any
+  // astria_tune_id / fal_lora_url it likes (all eleven columns are covered by
+  // the table-level INSERT grant). The engine identifiers are verified below,
+  // before a single credit is touched. See lib/identity.ts.
+  //
+  // select("*") tolerates an un-migrated DB (provider / fal_lora_url just come
+  // back undefined → astria), so the default FLUX.1 path keeps working before
+  // migration 002 is applied.
   const { data: modelRaw, error: modelErr } = await supabase
     .from("models")
     .select("*")
@@ -229,11 +240,50 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  // The service client is needed twice below: to verify the engine identity
+  // (an RLS client can only see the caller's own rows, which would make the
+  // check vacuous) and for the wallet RPCs.
+  const serviceClient = await createServiceClient();
+
+  // Establish that the tune / LoRA this row names is actually this user's,
+  // BEFORE credits are deducted and before anything is sent to an engine.
+  // `identity` carries branded types, so it is also the only value the provider
+  // will accept — the check cannot be skipped by a future edit here.
+  let identity: VerifiedIdentity;
+  try {
+    identity = await verifyModelIdentity({
+      serviceClient,
+      userId: user.id,
+      model: {
+        id: modelId,
+        astria_tune_id: model.astria_tune_id,
+        fal_lora_url: model.fal_lora_url ?? null,
+      },
+    });
+  } catch (err) {
+    const foreign = err instanceof ForeignIdentityError;
+    log.error(foreign ? "foreign_identity_blocked" : "identity_check_failed", {
+      userId: user.id,
+      modelId,
+      provider,
+      ...(foreign ? (err as ForeignIdentityError).info() : errInfo(err)),
+    });
+    return NextResponse.json(
+      {
+        error: foreign
+          ? "This model's engine identity does not belong to you."
+          : "Could not verify this model's engine identity",
+        code: foreign ? "foreign_identity" : "identity_check_failed",
+        reqId: log.reqId,
+      },
+      { status: foreign ? 403 : 500 }
+    );
+  }
+
   // Deduct credits (1 per image). deductCredits itself checks the balance atomically —
   // no separate pre-check query needed. The wallet RPCs are service-role only (see
   // docs/PLATFORM.md §3), so this goes through the service client, not the user-session one.
   const totalCost = numImages;
-  const serviceClient = await createServiceClient();
   const { success } = await deductCredits(
     serviceClient,
     user.id,
@@ -263,11 +313,6 @@ export async function POST(req: NextRequest) {
         pgMessage: refundErr instanceof Error ? refundErr.message : String(refundErr),
       });
     }
-  };
-
-  const providerModel = {
-    astriaTuneId: model.astria_tune_id ?? null,
-    falLoraUrl: model.fal_lora_url ?? null,
   };
 
   try {
@@ -300,7 +345,7 @@ export async function POST(req: NextRequest) {
     const rendered = (
       await Promise.all(
         submissionPlan.map((s) =>
-          providerImpl.render(providerModel, {
+          providerImpl.render(identity, {
             prompt,
             numImages: s.numImages,
             seed: s.seed,
@@ -349,8 +394,6 @@ export async function POST(req: NextRequest) {
         { status: 502 }
       );
     }
-
-    const serviceClient = await createServiceClient();
 
     // Mirror each image from Astria to our bucket so we don't rely on
     // Astria URL longevity. If mirroring fails for one image, fall back
@@ -471,7 +514,6 @@ export async function POST(req: NextRequest) {
         tuneId: err.tuneId ?? model.astria_tune_id,
       });
       await refund("model expired");
-      const serviceClient = await createServiceClient();
       // Best-effort: tolerate an un-migrated DB where 'expired' isn't yet a
       // valid status — the refund + message below still stand.
       const { error: markErr } = await serviceClient
