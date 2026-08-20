@@ -111,6 +111,39 @@ counterpart: read the ledger **directly first**, then insist `/account` renders
 what it actually holds — an empty state is not evidence, because a working page
 and a broken page produce the same one.
 
+### 4 — a write privilege is a claim about behaviour; measure it
+
+Layer 1 originally proved only that a role could SELECT. That is blind to the
+column-level grant, which is what a user can actually *write* — and on
+`mypix.models` one of those columns, `astria_tune_id`, names whose FACE a render
+is of. Platform migration 0020 granted UPDATE at table level; 0022 narrowed it to
+`{cover_image_url, updated_at}`. Nothing watched the difference, so re-running
+`grant update on … to authenticated` would have restored identity misuse in one
+line with every gate still green.
+
+`verify/src/privileges.ts` asserts, per table in the product schema, that the
+columns `authenticated` may UPDATE are exactly the columns RLS-client code
+writes. Both sides are derived — the needed set from `Inventory.writes` (the
+source scan), the granted set from the database — so neither is a list anyone has
+to remember to update. Widen a grant and the failure names the columns nothing
+writes; add an RLS-client UPDATE and it tells you to grant that column.
+
+It is measured, not read out of `information_schema.column_privileges`: that view
+is not reachable from here (PostgREST exposes only the product schemas, and this
+suite deliberately holds nothing but the three credentials the app has). Asking
+Postgres "may this role update this column?" is also the stronger question, since
+a privilege is the UNION of the table-level and column-level grants — 0022 records
+that its `grant update (…)` line alone would have left the wide grant untouched
+while reporting success. The probe writes nothing: every PATCH filters on the nil
+UUID, and Postgres checks column privileges before it touches a row.
+
+Proved to fail: with `grant update on mypix.models to authenticated` committed,
+the assertion failed naming `astria_tune_id`, `fal_lora_url`, `status`, `user_id`
+and the rest; restoring 0022's two statements turned it green again.
+
+The application-layer defence for the same failure mode is `lib/identity.ts` —
+the grant is a second line, not the line.
+
 ### New journey → new Layer 2 step
 
 Preflight only proves reachability per role; write paths and rendering are covered

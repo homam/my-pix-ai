@@ -62,8 +62,23 @@ export interface RpcRef {
 }
 
 export interface UnresolvedRef {
-  kind: 'table' | 'bucket' | 'rpc';
+  kind: 'table' | 'bucket' | 'rpc' | 'write-columns';
   expression: string;
+  ref: SourceRef;
+}
+
+/**
+ * One write against a table, with the COLUMNS it names and the role that issues
+ * it. This is what lets the preflight compare a column-level grant against the
+ * columns the code actually writes, instead of against a list someone has to
+ * remember to update.
+ */
+export interface WriteRef {
+  schema: string;
+  table: string;
+  op: 'insert' | 'update' | 'upsert';
+  role: Role;
+  columns: string[];
   ref: SourceRef;
 }
 
@@ -71,6 +86,7 @@ export interface Inventory {
   tables: TableRef[];
   buckets: BucketRef[];
   rpcs: RpcRef[];
+  writes: WriteRef[];
   unresolved: UnresolvedRef[];
 }
 
@@ -281,6 +297,28 @@ function lineOf(code: string, index: number): number {
 }
 
 /**
+ * First top-level argument of `text`, which must start at the call's `(`.
+ *
+ * Bracket-balanced, so `.insert(rows.map((r) => ({ a: 1 })))` yields the whole
+ * argument and never bleeds into the code that follows the call — which matters
+ * because the column reader below looks for an object literal and would happily
+ * find one three statements later.
+ */
+export function firstArgument(text: string): string | null {
+  if (text[0] !== '(') return null;
+  let depth = 0;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i]!;
+    if (ch === '(' || ch === '[' || ch === '{') depth++;
+    else if (ch === ')' || ch === ']' || ch === '}') {
+      depth--;
+      if (depth === 0) return text.slice(1, i).trim();
+    } else if (ch === ',' && depth === 1) return text.slice(1, i).trim();
+  }
+  return null;
+}
+
+/**
  * Which role a given local variable speaks as, read from its DECLARATION.
  *
  * A name heuristic alone is wrong here: `app/api/webhooks/astria/route.ts`
@@ -330,12 +368,19 @@ interface RawRef {
   roles: Role[];
   op?: string;
   args?: string[];
+  /** Columns named by a table write; `null` = a write whose argument is not a literal. */
+  columns?: string[] | null;
   line: number;
 }
 
 /**
- * Top-level keys of the first `{ … }` in `text` (an RPC argument object).
- * Brace-balanced so a nested object does not leak its keys.
+ * Top-level keys of the first `{ … }` in `text` (an RPC argument object, or the
+ * column map of an insert/update). Brace-balanced so a nested object does not
+ * leak its keys.
+ *
+ * Shorthand (`{ slug, user_id }`) counts: for a write, a missed key means the
+ * preflight believes the code needs a NARROWER grant than it does, and reports
+ * a grant that is legitimately in use as drift.
  */
 export function readObjectKeys(text: string): string[] {
   const start = text.indexOf('{');
@@ -357,22 +402,34 @@ export function readObjectKeys(text: string): string[] {
   const keys: string[] = [];
   let d = 0;
   let token = '';
+  // `{ user_id }` — a bare identifier standing alone between separators.
+  const shorthand = (t: string): string | null =>
+    /^[A-Za-z_$][\w$]*$/.test(t.trim()) ? t.trim() : null;
+  // Only a segment that never saw a top-level `:` can be shorthand — otherwise
+  // the VALUE of `p_user: userId` would be read as a second key.
+  let valued = false;
   for (let i = 0; i < body.length; i++) {
     const ch = body[i]!;
     if (ch === '{' || ch === '[' || ch === '(') d++;
     else if (ch === '}' || ch === ']' || ch === ')') d--;
     if (d === 0 && ch === ',') {
+      const key = valued ? null : shorthand(token);
+      if (key) keys.push(key);
       token = '';
+      valued = false;
       continue;
     }
     if (d === 0 && ch === ':') {
       const key = /([A-Za-z_$][\w$]*)\s*$/.exec(token)?.[1];
       if (key) keys.push(key);
       token = '';
+      valued = true;
       continue;
     }
     if (d === 0) token += ch;
   }
+  const last = valued ? null : shorthand(token);
+  if (last) keys.push(last);
   return keys;
 }
 
@@ -414,12 +471,27 @@ export function extractRefs(source: string, consts: ConstIndex): RawRef[] {
       const op = /^\s*\.\s*(\w+)\s*\(/.exec(tail)?.[1] ?? 'unknown';
       refs.push({ kind: 'bucket', schema: 'storage', name, expression, roles, op, line });
     } else {
+      // The first method chained after `.from(table)` is the operation. Only
+      // the mutating ones carry columns; everything else is a read.
+      const after = (m.index ?? 0) + m[0].length;
+      const chained = /^\s*\.\s*(\w+)\s*\(/.exec(code.slice(after, after + 160));
+      const op = chained?.[1];
+      let columns: string[] | null | undefined;
+      if (op === 'insert' || op === 'update' || op === 'upsert') {
+        const arg = firstArgument(code.slice(after + chained![0].length - 1, after + 8000));
+        // `.update({ a, b })` → the columns. `.insert(rows)` → a variable, whose
+        // columns cannot be read here; null so the caller can refuse to guess.
+        const keys = arg === null ? [] : readObjectKeys(arg);
+        columns = arg !== null && keys.length > 0 ? keys : null;
+      }
       refs.push({
         kind: 'table',
         schema: explicitSchema ?? DEFAULT_SCHEMA,
         name,
         expression,
         roles,
+        op,
+        columns,
         line,
       });
     }
@@ -474,6 +546,7 @@ export function scanInventory(opts: ScanOptions): Inventory {
   const tables = new Map<string, TableRef>();
   const buckets = new Map<string, BucketRef>();
   const rpcs = new Map<string, RpcRef>();
+  const writes: WriteRef[] = [];
   const unresolved: UnresolvedRef[] = [];
 
   for (const { file, code } of sources) {
@@ -490,6 +563,31 @@ export function scanInventory(opts: ScanOptions): Inventory {
         for (const role of r.roles) if (!entry.roles.includes(role)) entry.roles.push(role);
         entry.refs.push(at);
         tables.set(key, entry);
+        const op = r.op;
+        if (op === 'insert' || op === 'update' || op === 'upsert') {
+          // A write whose columns cannot be read statically is only a problem
+          // for the role the grants constrain; the service role bypasses them.
+          if (r.columns == null) {
+            if (r.roles.includes('authenticated')) {
+              unresolved.push({
+                kind: 'write-columns',
+                expression: `${r.schema}.${r.name}.${op}(…)`,
+                ref: at,
+              });
+            }
+          } else {
+            for (const role of r.roles) {
+              writes.push({
+                schema: r.schema,
+                table: r.name,
+                op,
+                role,
+                columns: r.columns,
+                ref: at,
+              });
+            }
+          }
+        }
       } else if (r.kind === 'bucket') {
         const entry =
           buckets.get(r.name) ??
@@ -522,6 +620,9 @@ export function scanInventory(opts: ScanOptions): Inventory {
     ),
     buckets: [...buckets.values()].sort((a, b) => byName(a.bucket, b.bucket)),
     rpcs: [...rpcs.values()].sort((a, b) => byName(`${a.schema}.${a.fn}`, `${b.schema}.${b.fn}`)),
+    writes: writes.sort((a, b) =>
+      byName(`${a.schema}.${a.table}.${a.op}`, `${b.schema}.${b.table}.${b.op}`),
+    ),
     unresolved,
   };
 }

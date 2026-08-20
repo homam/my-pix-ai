@@ -31,7 +31,7 @@
  *   VERIFY_ROOT=/path/to/worktree npm run preflight   # scan a different checkout
  */
 import { beforeAll, describe, expect, it } from 'vitest';
-import { defaultScanOptions, scanInventory } from './inventory';
+import { DEFAULT_SCHEMA, defaultScanOptions, scanInventory } from './inventory';
 import { scanCreditCallSites, describeViolation } from './credit-clients';
 import { describe as describeConfig, loadConfig } from './config';
 import {
@@ -52,6 +52,15 @@ import {
   diagnoseTableProbe,
 } from './diagnose';
 import { mintSession, type Session } from './session';
+import {
+  compareUpdateGrant,
+  describeGrantVerdict,
+  neededUpdateColumns,
+  probeUpdatableColumns,
+  tableShapes,
+  type GrantProbe,
+  type TableShape,
+} from './privileges';
 
 const cfg = loadConfig();
 const creds: Creds = {
@@ -281,6 +290,76 @@ describe('tables', () => {
         );
       });
     }
+  }
+});
+
+// ────────────────────────────────── the grant that was mistaken for a defence
+/**
+ * Migration 0022 narrowed `authenticated`'s UPDATE on mypix.models from all
+ * eleven columns to {cover_image_url, updated_at}, because a table-level grant
+ * let a user rewrite `astria_tune_id` — the handle naming whose FACE a render
+ * is of — on their own row and generate images of another person. Re-granting
+ * UPDATE at table level puts that back in one line, and until this ran nothing
+ * would have noticed.
+ *
+ * Both sides are derived (see privileges.ts): what the DATABASE permits, probed
+ * column by column with an update that matches no rows, against what the SOURCE
+ * writes through the RLS client. Equality is the assertion.
+ */
+describe('column-level write privileges', () => {
+  const shapes: TableShape[] = [];
+  const probes = new Map<string, GrantProbe>();
+  let probeError: string | null = null;
+
+  beforeAll(async () => {
+    if (!creds.supabaseUrl || !creds.serviceKey || !session) return;
+    try {
+      shapes.push(...(await tableShapes(creds, DEFAULT_SCHEMA)));
+      for (const shape of shapes) {
+        probes.set(
+          shape.table,
+          await probeUpdatableColumns(creds, DEFAULT_SCHEMA, shape, session.accessToken),
+        );
+      }
+      const summary = shapes
+        .map((s) => `${s.table}:{${(probes.get(s.table)?.granted ?? []).join(',') || '—'}}`)
+        .join(' ');
+      console.log(`  update grants · authenticated · ${summary}`);
+    } catch (e) {
+      probeError = String(e);
+    }
+  });
+
+  it(`enumerated the tables of schema "${DEFAULT_SCHEMA}" from the database`, () => {
+    if (!session) throw new Error(`no session: ${sessionError}`);
+    expect(probeError, probeError ?? '').toBeNull();
+    expect(
+      shapes.map((s) => s.table),
+      'no tables came back for this schema — the check below would cover nothing',
+    ).not.toEqual([]);
+  });
+
+  for (const table of inventory.tables.filter((t) => t.schema === DEFAULT_SCHEMA)) {
+    it(`${DEFAULT_SCHEMA}.${table.table}: UPDATE is granted on exactly the columns the app writes`, () => {
+      if (!session) throw new Error(`no session: ${sessionError}`);
+      const probe = probes.get(table.table);
+      if (!probe) {
+        throw new Error(
+          `${DEFAULT_SCHEMA}.${table.table} is used at ${table.refs[0]!.file}:${table.refs[0]!.line} ` +
+            'but PostgREST does not publish it — it does not exist, or the schema is not exposed',
+        );
+      }
+      expect(
+        probe.inconclusive.map((c) => `${c.column}: ${c.detail}`),
+        'a column privilege could not be established either way — an unverifiable privilege is a ' +
+          'defect, not a pass',
+      ).toEqual([]);
+      const verdict = compareUpdateGrant(
+        probe,
+        neededUpdateColumns(inventory.writes, DEFAULT_SCHEMA, table.table),
+      );
+      expect(verdict.ok, describeGrantVerdict(DEFAULT_SCHEMA, verdict)).toBe(true);
+    });
   }
 });
 

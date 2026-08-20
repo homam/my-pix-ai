@@ -27,12 +27,15 @@ import { join, relative, sep } from 'node:path';
 import {
   collectSourceFiles,
   declaredClientRoles,
+  firstArgument,
   roleFromName,
   stripComments,
   type Role,
   type ScanOptions,
   type SourceRef,
 } from './inventory';
+
+export { firstArgument };
 
 /** Where the credit helpers live; also the file the classification is read from. */
 export const CREDITS_MODULE = 'lib/credits.ts';
@@ -120,21 +123,6 @@ export function roleOfClientExpression(
   if (d?.length === 1) return d[0]!;
   if (d?.length) return null; // declared both ways in one file — undecidable
   return roleFromName(ident);
-}
-
-/** First top-level argument of `text`, which must start at the call's `(`. */
-export function firstArgument(text: string): string | null {
-  if (text[0] !== '(') return null;
-  let depth = 0;
-  for (let i = 0; i < text.length; i++) {
-    const ch = text[i]!;
-    if (ch === '(' || ch === '[' || ch === '{') depth++;
-    else if (ch === ')' || ch === ']' || ch === '}') {
-      depth--;
-      if (depth === 0) return text.slice(1, i).trim();
-    } else if (ch === ',' && depth === 1) return text.slice(1, i).trim();
-  }
-  return null;
 }
 
 function lineOf(code: string, index: number): number {
