@@ -5,9 +5,16 @@ import { BRAND } from "@/lib/brand";
 
 /**
  * MyPix's credit wallet lives in the shared aionized platform (core.wallets, brand = "mypix"),
- * not a MyPix-only table. `supabase` must be a service-role client (see
- * lib/supabase/server.ts createServiceClient) — these RPCs are SECURITY DEFINER and require an
- * explicit user id.
+ * not a MyPix-only table.
+ *
+ * `supabase` MUST be a service-role client (lib/supabase/server.ts `createServiceClient`).
+ * This is not a style preference — it is enforced by the database. The `core.*` credit RPCs
+ * are SECURITY DEFINER, take the target user as a parameter, and carry no authorization check
+ * of their own, so platform migration 0021 revoked EXECUTE on `ensure_wallet` /
+ * `spend_credits` / `grant_credits` / `settle_payment` / `bind_entity` from PUBLIC; only
+ * `service_role` may call them. Passing the RLS/anon client (`createClient`) fails with
+ * `42501 permission denied for function`, and must never be re-enabled — a browser-reachable
+ * key that can execute these could mint unlimited credits for any user on any product.
  */
 function platform(supabase: SupabaseClient<any, any, any>) {
   return createPlatformAdmin(supabase, BRAND.key);

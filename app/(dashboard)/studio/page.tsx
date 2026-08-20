@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import { StudioTools } from "@/components/studio/StudioTools";
 import { getBalance } from "@/lib/credits";
@@ -41,7 +41,7 @@ export default async function StudioPage({
         .limit(24),
     ]);
 
-  const balance = await getBalance(supabase, user.id);
+  const balance = await getBalance(await createServiceClient(), user.id);
   const initialTool = TOOL_IDS.includes(tool as ToolId)
     ? (tool as ToolId)
     : undefined;

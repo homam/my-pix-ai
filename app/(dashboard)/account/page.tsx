@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Coins } from "lucide-react";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { getBalance } from "@/lib/credits";
 import { CreditTransaction } from "@/types";
 import { SharesList, ShareRow } from "@/components/SharesList";
@@ -22,7 +22,7 @@ export default async function AccountPage() {
   if (!user) redirect("/login");
 
   const [balance, { data: txns }, { data: shares }] = await Promise.all([
-    getBalance(supabase, user.id),
+    getBalance(await createServiceClient(), user.id),
     supabase
       .from("credit_transactions")
       .select("*")

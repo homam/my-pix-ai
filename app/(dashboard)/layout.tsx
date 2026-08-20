@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { LayoutDashboard, Plus, LogOut, Coins, User, Wand2, Images } from "lucide-react";
 import { getBalance } from "@/lib/credits";
 import { Logo } from "@/components/brand/Logo";
@@ -17,7 +17,9 @@ export default async function DashboardLayout({
 
   if (!user) redirect("/login");
 
-  const balance = await getBalance(supabase, user.id);
+  // Credit RPCs are service_role-only (migration 0021 revoked EXECUTE from PUBLIC),
+  // so the balance read must go through the service client, never the RLS one.
+  const balance = await getBalance(await createServiceClient(), user.id);
 
   async function signOut() {
     "use server";

@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import { getBalance } from "@/lib/credits";
 import { CREDIT_COSTS } from "@/types";
@@ -12,7 +12,7 @@ export default async function NewModelPage() {
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  const balance = await getBalance(supabase, user.id);
+  const balance = await getBalance(await createServiceClient(), user.id);
   const canTrain = balance >= CREDIT_COSTS.TRAINING;
 
   return (

@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { redirect, notFound } from "next/navigation";
 import { Model, GeneratedImage } from "@/types";
 import { GenerateSection } from "@/components/GenerateSection";
@@ -44,7 +44,7 @@ export default async function ModelPage({
   if (!model) notFound();
 
   const m = model as Model;
-  const balance = await getBalance(supabase, user.id);
+  const balance = await getBalance(await createServiceClient(), user.id);
   const currentProvider = m.provider === "fal" ? "fal" : "astria";
   const ultraAvailable = isFalConfigured();
 
