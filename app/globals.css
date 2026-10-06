@@ -37,8 +37,12 @@
   --radius: 0.75rem;
 }
 
-* {
-  border-color: var(--color-border);
+/* Default border colour. Must stay in @layer base: an unlayered rule beats
+   every Tailwind utility, so border-brand-500 & co. would render as this. */
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
 }
 
 body {
@@ -69,40 +73,43 @@ body {
   }
 }
 
-/* Long-form article styling for /terms and /privacy (no typography plugin). */
-.legal-prose h2 {
-  font-size: 1.125rem;
-  font-weight: 600;
-  margin: 2rem 0 0.75rem;
-}
+/* Long-form article styling for /terms and /privacy (no typography plugin).
+   In @layer components so utilities on these elements (text-gray-500, …) win. */
+@layer components {
+  .legal-prose h2 {
+    font-size: 1.125rem;
+    font-weight: 600;
+    margin: 2rem 0 0.75rem;
+  }
 
-.legal-prose p,
-.legal-prose ul {
-  color: var(--color-muted-foreground);
-  font-size: 0.9rem;
-  line-height: 1.7;
-  margin-bottom: 0.75rem;
-}
+  .legal-prose p,
+  .legal-prose ul {
+    color: var(--color-muted-foreground);
+    font-size: 0.9rem;
+    line-height: 1.7;
+    margin-bottom: 0.75rem;
+  }
 
-.legal-prose ul {
-  list-style: disc;
-  padding-left: 1.25rem;
-}
+  .legal-prose ul {
+    list-style: disc;
+    padding-left: 1.25rem;
+  }
 
-.legal-prose li {
-  margin-bottom: 0.5rem;
-}
+  .legal-prose li {
+    margin-bottom: 0.5rem;
+  }
 
-.legal-prose strong {
-  color: var(--color-foreground);
-}
+  .legal-prose strong {
+    color: var(--color-foreground);
+  }
 
-.legal-prose a {
-  color: var(--color-brand-400);
-  text-decoration: underline;
-  text-underline-offset: 2px;
-}
+  .legal-prose a {
+    color: var(--color-brand-400);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
 
-.legal-prose a:hover {
-  color: var(--color-brand-300);
+  .legal-prose a:hover {
+    color: var(--color-brand-300);
+  }
 }
