@@ -64,6 +64,7 @@ interface QueueSubmitResponse {
   // them from the model id is wrong. Optional only as a defensive guard.
   status_url?: string;
   response_url?: string;
+  cancel_url?: string;
 }
 
 export type FalStatus =
@@ -75,6 +76,9 @@ export type FalStatus =
 
 interface QueueStatus {
   status: FalStatus;
+  // Present when a COMPLETED request actually failed (bad input, safety block).
+  error?: string | null;
+  error_type?: string | null;
 }
 
 /**
@@ -145,6 +149,15 @@ async function waitForFalResult<T>(
   }
   throw new Error(`fal request did not complete within ${timeoutMs}ms`);
 }
+
+// The raw queue primitives, shared with the composite engine
+// (lib/composite/provider.ts), which talks to fal's multi-reference edit models.
+export {
+  submit as falQueueSubmit,
+  getStatusByUrl as falQueueStatus,
+  getResultByUrl as falQueueResult,
+};
+export type { QueueSubmitResponse as FalQueueSubmission, QueueStatus as FalQueueStatus };
 
 // ------------------------------ Generation ------------------------------
 

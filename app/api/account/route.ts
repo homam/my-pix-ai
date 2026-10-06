@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { deleteUserStorage } from "@/lib/storage";
+import { removeCompositeMedia } from "@/lib/composite/storage";
 import { makeLogger, errInfo } from "@/lib/log";
 
 // Permanently delete the signed-in user's account. Deleting the auth.users row
@@ -24,10 +25,13 @@ export async function DELETE(_req: NextRequest) {
 
   const svc = await createServiceClient();
 
-  // Best-effort storage cleanup of the user's whole tree.
+  // Best-effort storage cleanup of the user's whole tree — in BOTH buckets: the
+  // public `mypix` one, and the private composites bucket that holds their
+  // original travel photos, videos and renders (lib/composite/storage.ts).
   try {
     const removed = await deleteUserStorage(svc, user.id);
-    log.info("storage_cleaned", { userId: user.id, removed });
+    const composites = await removeCompositeMedia(svc, user.id);
+    log.info("storage_cleaned", { userId: user.id, removed, composites });
   } catch (err) {
     log.error("storage_cleanup_failed", { userId: user.id, ...errInfo(err) });
   }

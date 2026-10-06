@@ -11,10 +11,12 @@
     "test": "vitest run --config verify/vitest.unit.config.ts",
     "preflight": "vitest run --config verify/vitest.preflight.config.ts",
     "smoke": "vitest run --config verify/vitest.smoke.config.ts",
-    "verify": "npm run preflight && npm run smoke"
+    "verify": "npm run preflight && npm run smoke",
+    "eval:review": "vitest run --config verify/vitest.review-eval.config.ts"
   },
   "dependencies": {
     "@aionized/platform-client": "file:vendor/aionized-platform-client-0.1.1.tgz",
+    "@anthropic-ai/sdk": "^0.131.0",
     "@supabase/ssr": "^0.5.2",
     "@supabase/supabase-js": "^2.47.10",
     "class-variance-authority": "^0.7.1",
@@ -25,9 +27,10 @@
     "react-dom": "^19.0.0",
     "react-dropzone": "^14.3.5",
     "resend": "^4.1.2",
+    "sharp": "^0.33.5",
     "stripe": "^17.7.0",
     "tailwind-merge": "^2.6.0",
-    "zod": "^3.24.1"
+    "zod": "^3.25.0"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.0.9",

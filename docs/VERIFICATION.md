@@ -103,6 +103,11 @@ and `/api/health` call. The bucket's `public` flag is asserted too, because
 `getPublicUrl` hands Astria unauthenticated URLs — a bucket flipped private would
 break training with no error in any log of ours.
 
+The converse is asserted as well (2026-10-06): a bucket the code never builds a public URL from
+must be **private**. That is `mypix-composites`, which holds users' original travel photos and
+videos (docs/COMPOSITES.md); flipping it public would expose every object to anyone holding a
+path while every functional check stayed green. `/api/health` reports the same.
+
 ### 3 — never ignore a Supabase `error`
 
 Every 2026 outage on this platform presented as "nothing happens". Read the error

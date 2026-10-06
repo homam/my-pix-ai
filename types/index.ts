@@ -40,7 +40,10 @@ export type ImageKind =
   | "inpaint"
   | "outpaint"
   | "restore"
-  | "tryon";
+  | "tryon"
+  // A multi-source composite version (lib/composite/). Its pixels live in the
+  // private composites bucket; `url` is the owner-only media route.
+  | "composite";
 
 export interface GenerationSettings {
   // What we actually sent to Astria — the user's prompt plus any auto-prepended
@@ -78,6 +81,12 @@ export interface GenerationSettings {
   outpaintHeight?: number;
   colorize?: boolean;
   garmentId?: string;
+  // Composite versions (kind "composite").
+  compositeGroupId?: string;
+  compositeVersionId?: string;
+  versionNumber?: number;
+  nativeWidth?: number;
+  nativeHeight?: number;
 }
 
 export interface GeneratedImage {
@@ -93,6 +102,8 @@ export interface GeneratedImage {
   settings: GenerationSettings | null;
   kind: ImageKind;
   source_image_id: string | null;
+  // Set on kind "composite" rows; deleting the version deletes this row.
+  composite_version_id?: string | null;
   created_at: string;
 }
 
@@ -140,6 +151,7 @@ export type CreditTransactionType =
   | "training"
   | "generation"
   | "garment"
+  | "composite"
   | "spend";
 
 /** A ledger row reshaped for the credit-history table on /account. */
@@ -200,4 +212,8 @@ export const CREDIT_COSTS = {
   TRAINING: 20, // cost to train one model
   GENERATION: 1, // cost per generated image
   GARMENT: 5, // cost to fine-tune one garment for virtual try-on
+  // One multi-source composite render OR one correction of a version. Priced from
+  // the 2026-10-06 provider spike (docs/COMPOSITES.md): a native-4K render on
+  // fal-ai/nano-banana-pro/edit is $0.30, plus ~$0.05 for the automatic review.
+  COMPOSITE: 5,
 } as const;

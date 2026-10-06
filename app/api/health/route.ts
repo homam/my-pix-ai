@@ -24,6 +24,10 @@
 import { createServiceClient } from "@/lib/supabase/server";
 import { STORAGE_BUCKET } from "@/lib/storage";
 import { BRAND } from "@/lib/brand";
+import { COMPOSITE_BUCKET } from "@/lib/composite/storage";
+import { compositeProvider } from "@/lib/composite/config";
+import { reviewerEnabled } from "@/lib/composite/review";
+import sharp from "sharp";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -123,7 +127,52 @@ export async function GET() {
     } catch (e) {
       checks.push({ name: `storage:${STORAGE_BUCKET}`, ok: false, detail: String(e) });
     }
+
+    // The composites bucket holds users' original travel photos and videos. It
+    // must exist AND stay private — the inverse of the check above.
+    try {
+      const { data, error } = await admin.storage.getBucket(COMPOSITE_BUCKET);
+      checks.push({
+        name: `storage:${COMPOSITE_BUCKET}`,
+        ok: !error && data?.public === false,
+        detail:
+          error?.message ??
+          (data?.public === false
+            ? undefined
+            : "bucket is PUBLIC — composite originals and renders would be readable by anyone with a path"),
+      });
+    } catch (e) {
+      checks.push({ name: `storage:${COMPOSITE_BUCKET}`, ok: false, detail: String(e) });
+    }
   }
+
+  // Composite renders are saved, previewed, reviewed and corrected with sharp's
+  // native binary (lib/composite/imaging.ts). The deploy gate's smoke skips the
+  // render steps on a paid provider, so this is where a container whose sharp
+  // cannot load (wrong libc/arch binary) shows up — before a user pays for a
+  // render that then fails to save.
+  if (compositeProvider()) {
+    try {
+      const png = await sharp({ create: { width: 2, height: 2, channels: 3, background: "#808080" } })
+        .png()
+        .toBuffer();
+      const meta = await sharp(png).metadata();
+      checks.push({ name: "imaging:sharp", ok: meta.width === 2, detail: meta.width === 2 ? undefined : "sharp decoded a wrong size" });
+    } catch (e) {
+      checks.push({ name: "imaging:sharp", ok: false, detail: String(e).slice(0, 300) });
+    }
+  }
+
+  // Env-gated feature: reported, never failing. A smoke run reads `provider` to
+  // decide whether the full render journey is free to exercise (mock) or not.
+  const provider = compositeProvider();
+  const composite = {
+    enabled: Boolean(provider),
+    provider: provider?.id ?? null,
+    model: provider?.model ?? null,
+    resolution: provider?.resolution ?? null,
+    review: reviewerEnabled(),
+  };
 
   const ok = checks.every((c) => c.ok);
   return Response.json(
@@ -132,6 +181,7 @@ export async function GET() {
       brand: BRAND.key,
       entity: BRAND.entity.key,
       bucket: STORAGE_BUCKET,
+      composite,
       checks,
     },
     { status: ok ? 200 : 503, headers: { "cache-control": "no-store" } }

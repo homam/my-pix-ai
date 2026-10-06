@@ -36,7 +36,8 @@ export const OPTIONAL_FEATURES: Record<string, string> = {
   'stripe checkout': 'STRIPE_SECRET_KEY',
   'stripe webhooks': 'STRIPE_WEBHOOK_SECRET',
   'resend email': 'RESEND_API_KEY',
-  'fal FLUX.2 engine': 'FAL_KEY',
+  'fal FLUX.2 engine + composites': 'FAL_KEY',
+  'composite review (Claude)': 'ANTHROPIC_API_KEY',
   'astria webhooks': 'ASTRIA_WEBHOOK_SECRET',
 };
 

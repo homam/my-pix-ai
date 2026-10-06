@@ -136,7 +136,23 @@ export function diagnoseBucketVisibility(
   bucket: { public?: boolean },
   at: { bucket: string; needsPublic: boolean; sites: string[] },
 ): Verdict {
-  if (!at.needsPublic) return { ok: true };
+  if (!at.needsPublic) {
+    // The other half: a bucket the code never builds a public URL from has no
+    // reason to be public, and the one that exists for user travel media
+    // (`mypix-composites`, platform migration 0028) must not be. Flipping it to
+    // public would expose every original photo, video and render to anyone
+    // holding a path — with every functional check still green.
+    if (bucket.public === true) {
+      return {
+        ok: false,
+        reason:
+          `bucket "${at.bucket}" is PUBLIC, but nothing in the code needs public URLs from it ` +
+          `(used at ${at.sites.join(', ')}) — its objects are readable by anyone with the path. ` +
+          'Set it back to private; the app reads it through short-lived signed URLs',
+      };
+    }
+    return { ok: true };
+  }
   if (bucket.public === true) return { ok: true };
   return {
     ok: false,

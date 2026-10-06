@@ -177,8 +177,10 @@ describe('the live repo scan', () => {
     expect(names).toContain('core.credit_transactions');
   });
 
-  it('finds the single product bucket, resolved through STORAGE_BUCKET', () => {
-    expect(inv.buckets.map((b) => b.bucket)).toEqual(['mypix']);
+  it('finds the product buckets, resolved through their constants', () => {
+    // `mypix` via STORAGE_BUCKET (public: Astria fetches training photos), and
+    // `mypix-composites` via COMPOSITE_BUCKET (private: user travel media).
+    expect(inv.buckets.map((b) => b.bucket)).toEqual(['mypix', 'mypix-composites']);
   });
 
   it('finds the core wallet RPCs through @aionized/platform-client', () => {

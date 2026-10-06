@@ -91,7 +91,12 @@ export function creditHistoryRow(tx: CreditTransaction): CreditHistoryRow {
 
   let type: CreditTransactionType;
   if (!isCredit) {
-    const spendTypes: CreditTransactionType[] = ["training", "generation", "garment"];
+    const spendTypes: CreditTransactionType[] = [
+      "training",
+      "generation",
+      "garment",
+      "composite",
+    ];
     type =
       spendTypes.find((t) => t === reason.toLowerCase()) ?? "spend";
   } else if (tx.ref?.startsWith("cs_")) {

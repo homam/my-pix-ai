@@ -226,6 +226,11 @@ Rules that follow from that:
   anyone mint credits.
 - **New journey → new Layer 2 step.** Preflight only proves reachability per role; write paths
   and rendering are covered functionally in `verify/src/smoke.spec.ts`.
+- **Composites in the smoke** (steps 11–18): the render/correction/refund steps need the free
+  mock engine — run the dev server from the **"my-pix-ai (mock composites)"** launch config
+  (`COMPOSITE_PROVIDER=mock COMPOSITE_REVIEW=off`). Against a paid deployment they are skipped
+  unless `VERIFY_COMPOSITE_RENDER=1`. The smoke account needs ≥15 credits.
+  `REVIEW_FIXTURES=… npm run eval:review` is the opt-in, paid check of the automatic review.
 - **Test accounts are per brand** — accounts never cross entities. `mypix` → entity1
   (`demo@mobilesparkcreations.com`), `glowshot` → entity2
   (`verify+glowshot@mobilesparkcreations.com`). The mapping is in `verify/src/config.ts` and
@@ -290,13 +295,49 @@ Either way, polling remains as a fallback — webhooks can be lost, so you alway
    page (engine picker + reuse/upload photos) and a quick one-click Retrain on
    dashboard cards for failed/expired models.
 
+6. **Compose (multi-source composites)**: Studio → Compose. Several photos (+ one optional
+   video) of a scene → one wide composite per group → automatic review → plain-language
+   corrections saved as new versions. Full write-up: **[docs/COMPOSITES.md](docs/COMPOSITES.md)**.
+
+---
+
+## Multi-source composites (Studio → Compose) — 2026-10-06
+
+Implements `docs/MULTI_SOURCE_COMPOSITES_HANDOFF.md`; design, spike numbers, runbook and
+acceptance status in **[docs/COMPOSITES.md](docs/COMPOSITES.md)**. What to know before touching it:
+
+- **Provider: `fal-ai/nano-banana-pro/edit` at native 4K** (chosen by a measured spike against
+  nano-banana-2 and Seedream 4.5, which tiles inputs side by side). On when `FAL_KEY` is set;
+  `COMPOSITE_PROVIDER=off|mock`, `COMPOSITE_MODEL`, `COMPOSITE_RESOLUTION` override.
+- **Async only.** A render takes 40–60 s and App Runner cuts requests at 120 s, so submit returns
+  at once and `GET /api/composites/jobs/[id]` (or the fal webhook nudge) advances the job one
+  heavy step per call under a lease. Never wait for a render inside a request.
+- **Private media.** Everything lives in the private `mypix-composites` bucket (no storage
+  policies); browsers and the provider get short-lived signed URLs; `generated_images.url` for
+  kind `composite` is the owner-only `/api/composites/media/...` route. The preflight fails if
+  the bucket ever turns public.
+- **Writes are service-role only.** `authenticated` has SELECT on `mypix.composite_*` (platform
+  migration 0028) — never grant it INSERT/UPDATE there (`refunded_at`, `cost_credits` live there).
+- **Money:** `CREDIT_COSTS.COMPOSITE = 5` per render/correction; idempotency key per click;
+  refund exactly once via a conditional update on `refunded_at`; one free resubmission for
+  nano-banana-pro's transient 422 "could not generate images".
+- **Move corrections are deterministic + generative**: the app pastes the marked element at its
+  target (`lib/composite/imaging.ts transplant`), the provider only removes the leftover. Text-only
+  "move the sun" did not work on any provider in the spike.
+- **Review** (`lib/composite/review.ts`, Claude `claude-opus-5-5`, structured output) runs on every
+  version when `ANTHROPIC_API_KEY` is set; it never blocks a version. Both App Runner services
+  have that key since 2026-10-06 (runtime env, like every other secret here); the fal webhook
+  reuses their `ASTRIA_WEBHOOK_PUBLIC_URL`/`ASTRIA_WEBHOOK_SECRET`.
+- **Video frames are extracted in the browser** (no worker tier; the project's object cap is
+  50 MB, so originals over `COMPOSITE_MAX_STORED_VIDEO_MB` are not stored — frames are).
+
 ---
 
 ## Credit economics
 - New users get **0** free credits (updated 2026-07-04 — no free tier in the real pricing model;
   `core.products.mypix.starter_credits = 0` in the shared platform. The old standalone project's
   "1000 dev-mode" auto-grant was retired along with that project).
-- Training: 20 credits. Generation: 1 credit per image.
+- Training: 20 credits. Generation: 1 credit per image. Composite render or correction: 5.
 - `/pricing` grants 500 credits per click (dev only — disable in prod with `DEV_GRANT_CREDITS=false`).
 
 ---
@@ -304,6 +345,9 @@ Either way, polling remains as a fallback — webhooks can be lost, so you alway
 ## Key files
 
 - `verify/` — the executable verification layers (preflight / smoke / unit); see docs/VERIFICATION.md
+- `lib/composite/` — composites: `jobs.ts` (start/advance/refund state machine), `provider.ts` (fal + mock engines), `review.ts` (Claude check), `imaging.ts` (sharp: previews, 4K export, move transplant), `selection.ts` / `prompt.ts` / `dimensions.ts` / `states.ts` / `errors.ts` (pure, unit-tested), `storage.ts` (private bucket), `client/` (browser decode, frames, uploads)
+- `app/api/composites/` — group CRUD, sources + signed upload slots, render, `versions/[id]/correct`, `jobs/[id]` (poll = advance), `media/[kind]/[id]` (owner-only signed redirects); `app/api/webhooks/fal-composite` (nudge)
+- `components/studio/compose/` — Compose tab (`ComposeTool`, `GroupDraft`) and project page (`CompositeProject`, `MarkableImage`); route `app/(dashboard)/studio/composites/[id]`
 - `app/api/health/route.ts` — the running container's dependency self-check, read by the deploy gate
 - `lib/brand.ts` — white-label brand registry (name, SEO copy, support email, legal entity, credit packs, color theme); selected by `NEXT_PUBLIC_BRAND_KEY`. Brands: `mypix` (purple/pink), `glowshot` (amber/rose, service `glowshot` on App Runner)
 - `components/brand/Logo.tsx` — swappable brand mark + wordmark (all header/footer logos render this)

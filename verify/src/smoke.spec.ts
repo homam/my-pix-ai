@@ -24,7 +24,11 @@
  * Everything it writes is deleted in afterAll. The account MUST belong to the
  * brand's entity — see BRAND_TEST_USERS in config.ts.
  */
+import sharp from 'sharp';
 import { afterAll, beforeAll, expect, it } from 'vitest';
+import { CREDIT_COSTS } from '@/types';
+import { COMPOSITE_BUCKET } from '@/lib/composite/storage';
+import { MOCK_FAIL_MARKER, MOCK_FAIL_ONCE_MARKER } from '@/lib/composite/provider';
 import { defaultScanOptions, scanInventory } from './inventory';
 import { describe as describeConfig, loadConfig } from './config';
 import { BRAND } from './env-contract';
@@ -57,7 +61,20 @@ const state: {
   cookie: string;
   modelId: string | null;
   objects: { bucket: string; path: string }[];
-} = { session: null, cookie: '', modelId: null, objects: [] };
+  composite: {
+    mode: 'off' | 'mock' | 'paid';
+    renders: boolean;
+    groupId: string | null;
+    sourceIds: string[];
+    versionIds: string[];
+  };
+} = {
+  session: null,
+  cookie: '',
+  modelId: null,
+  objects: [],
+  composite: { mode: 'off', renders: false, groupId: null, sourceIds: [], versionIds: [] },
+};
 
 function session(): Session {
   if (!state.session) throw new Error('no session — the sign-in step must run first');
@@ -87,7 +104,37 @@ beforeAll(() => {
   console.log(`\n  smoke · ${describeConfig(cfg)}\n`);
 });
 
+/** Every object under a storage prefix, one folder level deep (the composite layout). */
+async function listUnder(prefix: string): Promise<string[]> {
+  const list = async (p: string) => {
+    const res = await fetch(`${creds.supabaseUrl}/storage/v1/object/list/${COMPOSITE_BUCKET}`, {
+      method: 'POST',
+      headers: { apikey: creds.serviceKey, authorization: `Bearer ${creds.serviceKey}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ prefix: p, limit: 1000 }),
+    });
+    return ((await res.json().catch(() => [])) as { name: string; id: string | null }[]) ?? [];
+  };
+  const out: string[] = [];
+  for (const e of await list(prefix)) {
+    if (e.id === null) for (const f of await list(`${prefix}/${e.name}`)) out.push(`${prefix}/${e.name}/${f.name}`);
+    else out.push(`${prefix}/${e.name}`);
+  }
+  return out;
+}
+
 afterAll(async () => {
+  if (state.composite.groupId && state.session) {
+    // A failed run must not leave a project (or its private media) behind. The
+    // app's DELETE refuses while a job runs, so fall back to the service role.
+    const groupId = state.composite.groupId;
+    const del = await page(`/api/composites/${groupId}`, { method: 'DELETE' }).catch(() => null);
+    if (del?.status !== 200) {
+      for (const path of await listUnder(`${state.session.userId}/composites/${groupId}`).catch(() => [])) {
+        await removeObject(creds, 'service_role', COMPOSITE_BUCKET, path).catch(() => {});
+      }
+      await write(creds, 'service_role', 'mypix', `composite_groups?id=eq.${groupId}`, 'DELETE').catch(() => {});
+    }
+  }
   if (state.modelId) {
     await write(creds, 'service_role', 'mypix', `models?id=eq.${state.modelId}`, 'DELETE').catch(
       () => {},
@@ -317,4 +364,261 @@ it('10 · actually covered the storage buckets the code uses', () => {
     inventory.buckets.map((b) => b.bucket),
     'the scan found no buckets, so step 5 asserted nothing',
   ).not.toEqual([]);
+});
+
+// ── 11–18. multi-source composites ───────────────────────────────────────────
+// upload → owner-only media → queued job (idempotent, charged once) → result in
+// All photos → correction → two versions, the first still downloadable → a
+// failed job refunds exactly once → delete.
+//
+// Rendering is free only with the MOCK engine (local dev / CI against a dev
+// server: COMPOSITE_PROVIDER=mock). Against a deployment with the paid provider
+// the upload, privacy and validation steps run and the render steps are
+// skipped, unless VERIFY_COMPOSITE_RENDER=1 asks for a real (≈$1) run.
+
+async function wallet(): Promise<number> {
+  const r = await callRpc(creds, 'service_role', 'core', 'ensure_wallet', {
+    p_user: session().userId,
+    p_brand: BRAND.key,
+  });
+  if (typeof r.body !== 'number') throw new Error(`ensure_wallet: ${explain(r)}`);
+  return r.body;
+}
+
+async function appJson(path: string, init: RequestInit = {}) {
+  const res = await page(path, {
+    ...init,
+    headers: { 'content-type': 'application/json', ...(init.headers as Record<string, string>) },
+  });
+  return { status: res.status, body: (await res.json().catch(() => null)) as Record<string, any> | null };
+}
+
+async function pollJob(jobId: string, timeoutMs: number) {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const r = await appJson(`/api/composites/jobs/${jobId}`);
+    expect(r.status, `GET /api/composites/jobs/${jobId} → ${r.status} ${JSON.stringify(r.body)}`).toBe(200);
+    const job = r.body!.job as { status: string; version_id: string | null; error: string | null };
+    if (!['queued', 'generating', 'review'].includes(job.status)) return r.body!;
+    if (Date.now() > deadline) throw new Error(`job ${jobId} still ${job.status} after ${timeoutMs} ms`);
+    await new Promise((res) => setTimeout(res, 2000));
+  }
+}
+
+function skipRender(step: string): boolean {
+  if (state.composite.renders) return false;
+  console.log(
+    `  composite · ${step} skipped: provider is ${state.composite.mode} ` +
+      '(set COMPOSITE_PROVIDER=mock on the target, or VERIFY_COMPOSITE_RENDER=1 for a paid run)',
+  );
+  return true;
+}
+
+it('11 · reports whether composites are enabled, and how they render', async () => {
+  const res = await fetch(`${cfg.target}/api/health`, { headers: { accept: 'application/json' } });
+  const body = (await res.json().catch(() => null)) as { composite?: { enabled: boolean; provider: string | null } };
+  expect(body?.composite, '/api/health does not report the composite feature — stale image?').toBeTruthy();
+  const c = body!.composite!;
+  state.composite.mode = !c.enabled ? 'off' : c.provider === 'mock' ? 'mock' : 'paid';
+  state.composite.renders = c.provider === 'mock' || (c.enabled && cfg.env.VERIFY_COMPOSITE_RENDER === '1');
+  console.log(`  composite · enabled=${c.enabled} provider=${c.provider ?? '—'} renders=${state.composite.renders}`);
+});
+
+it('12 · creates a composite and uploads two photos through signed slots', async () => {
+  if (state.composite.mode === 'off') return console.log('  composite · disabled on target, skipped');
+
+  const created = await appJson('/api/composites', {
+    method: 'POST',
+    body: JSON.stringify({ name: SENTINEL, mustPreserve: ['the two light spots above the sun'] }),
+  });
+  expect(created.status, `POST /api/composites → ${JSON.stringify(created.body)}`).toBe(200);
+  const groupId = created.body!.group.id as string;
+  state.composite.groupId = groupId;
+
+  // Unsupported media is refused before anything is stored or charged.
+  const heic = await appJson(`/api/composites/${groupId}/sources`, {
+    method: 'POST',
+    body: JSON.stringify({
+      sources: [{ kind: 'photo', clientId: 'h', originalName: 'x.heic', mimeType: 'image/heic', byteSize: 10, width: 1, height: 1, sequence: 0 }],
+    }),
+  });
+  expect(heic.status, 'a HEIC photo must be rejected as unsupported media').toBe(415);
+
+  const photos = await Promise.all(
+    ['#d9772b', '#2b6fd9'].map((color, i) =>
+      sharp({ create: { width: 480, height: 640, channels: 3, background: color } })
+        .composite([{ input: Buffer.from(`<svg width="480" height="640"><circle cx="${140 + i * 200}" cy="200" r="60" fill="#fff"/></svg>`) }])
+        .jpeg()
+        .toBuffer(),
+    ),
+  );
+  const reg = await appJson(`/api/composites/${groupId}/sources`, {
+    method: 'POST',
+    body: JSON.stringify({
+      sources: photos.map((b, i) => ({
+        kind: 'photo', clientId: `p${i}`, originalName: `${SENTINEL}-${i}.jpg`, mimeType: 'image/jpeg',
+        byteSize: b.length, width: 480, height: 640, sequence: i, selected: true,
+        sharpness: 100, phash: i ? 'ffffffff00000000' : '00000000ffffffff',
+      })),
+    }),
+  });
+  expect(reg.status, `register sources → ${JSON.stringify(reg.body)}`).toBe(200);
+  const uploads = reg.body!.uploads as { clientId: string; id: string; original: { path: string; token: string }; reference: { path: string; token: string } }[];
+  for (const u of uploads) {
+    expect(u.original.path.startsWith(`${session().userId}/composites/${groupId}/`), 'upload path is outside the owner tree').toBe(true);
+    const bytes = photos[Number(u.clientId.slice(1))]!;
+    for (const slot of [u.original, u.reference]) {
+      const put = await putToSignedUrl(creds, `object/upload/sign/${COMPOSITE_BUCKET}/${slot.path}?token=${slot.token}`, bytes, 'image/jpeg');
+      expect(put.ok, `PUT ${slot.path}: ${explain(put)}`).toBe(true);
+    }
+  }
+  state.composite.sourceIds = uploads.map((u) => u.id);
+  const done = await appJson(`/api/composites/${groupId}/sources/complete`, {
+    method: 'POST',
+    body: JSON.stringify({ ids: state.composite.sourceIds }),
+  });
+  expect(done.status, `complete → ${JSON.stringify(done.body)}`).toBe(200);
+  expect(done.body!.missing, 'storage does not hold files the browser said it uploaded').toEqual([]);
+  expect(done.body!.status).toBe('ready_to_generate');
+});
+
+it('13 · composite media and rows are owner-only, and not writable by the user', async () => {
+  if (!state.composite.groupId) return;
+  const [sid] = state.composite.sourceIds;
+  // No cookie → no media.
+  const anonMedia = await fetch(`${cfg.target}/api/composites/media/source/${sid}?variant=original`, { redirect: 'manual' });
+  expect(anonMedia.status, 'composite media route answered a signed-out request').toBe(401);
+  // The bucket is private: the public-object URL must not serve it.
+  const path = `${session().userId}/composites/${state.composite.groupId}/originals/${sid}.jpg`;
+  const pub = await fetchPublicObject(creds, COMPOSITE_BUCKET, path);
+  expect(pub.ok, `the private composite bucket served ${path} publicly`).toBe(false);
+  // The owner gets a short-lived signed redirect that really serves the bytes.
+  const mine = await page(`/api/composites/media/source/${sid}?variant=original`);
+  expect(mine.status, 'owner media request should redirect to a signed URL').toBe(302);
+  const signed = await fetch(mine.headers.get('location')!);
+  expect(signed.ok && (signed.headers.get('content-type') ?? '').startsWith('image/'), 'signed URL did not serve the image').toBe(true);
+  // Another user's rows stay invisible.
+  const others = await asUser('mypix', `composite_groups?select=id&user_id=neq.${session().userId}&limit=1`);
+  expect((others.body as unknown[]).length, 'another user’s composites are visible under RLS').toBe(0);
+  // And the user cannot write server-owned state directly (e.g. flip a source to selected).
+  const forged = await write(creds, 'authenticated', 'mypix', `composite_sources?id=eq.${sid}`, 'PATCH', { selected: false }, session().accessToken);
+  expect(forged.ok, 'authenticated can UPDATE mypix.composite_sources — every composite write must go through the app').toBe(false);
+});
+
+it('14 · a render is queued once, charged once, and finishes as v1', async () => {
+  if (!state.composite.groupId || skipRender('render')) return;
+  const groupId = state.composite.groupId;
+  const sel = await appJson(`/api/composites/${groupId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ anchorSourceId: state.composite.sourceIds[0], selection: state.composite.sourceIds.map((id) => ({ id, selected: true })) }),
+  });
+  expect(sel.status, `PATCH selection → ${JSON.stringify(sel.body)}`).toBe(200);
+
+  const before = await wallet();
+  expect(before, `${cfg.testUserEmail} needs ${CREDIT_COSTS.COMPOSITE * 3} credits for this journey`).toBeGreaterThanOrEqual(CREDIT_COSTS.COMPOSITE * 3);
+  const key = `smoke${Date.now()}`;
+  const first = await appJson(`/api/composites/${groupId}/render`, { method: 'POST', body: JSON.stringify({ idempotencyKey: key }) });
+  expect(first.status, `render → ${JSON.stringify(first.body)}`).toBe(202);
+  const again = await appJson(`/api/composites/${groupId}/render`, { method: 'POST', body: JSON.stringify({ idempotencyKey: key }) });
+  expect(again.status, 'a retried render with the same key must return the first job').toBe(200);
+  expect(again.body!.job.id).toBe(first.body!.job.id);
+  expect(await wallet(), 'the retried click was charged again').toBe(before - CREDIT_COSTS.COMPOSITE);
+
+  const done = await pollJob(first.body!.job.id, state.composite.mode === 'mock' ? 45_000 : 280_000);
+  expect(done.job.status, `render ended ${done.job.status}: ${done.job.error}`).toBe('complete');
+  expect(done.version?.version_number).toBe(1);
+  expect(done.version?.native_width, 'v1 has no native dimensions').toBeGreaterThan(0);
+  state.composite.versionIds.push(done.version.id);
+}, 300_000);
+
+it('15 · the composite appears in All photos, linked back to its version', async () => {
+  if (!state.composite.versionIds.length) return;
+  const [v1] = state.composite.versionIds;
+  const rows = await asUser('mypix', `generated_images?select=id,kind,prompt,url&composite_version_id=eq.${v1}`);
+  expect(rows.status, explain(rows)).toBe(200);
+  const list = rows.body as { kind: string; prompt: string; url: string }[];
+  expect(list.length, 'no generated_images row for the new version — All photos would not show it').toBe(1);
+  expect(list[0]!.kind).toBe('composite');
+  expect(list[0]!.url).toBe(`/api/composites/media/version/${v1}`);
+  const html = await (await page('/photos')).text();
+  expect(html, '/photos does not render the composite').toContain(`${SENTINEL} — v1`);
+});
+
+it('16 · a correction creates v2 from v1, and v1 stays downloadable', async () => {
+  if (!state.composite.versionIds.length || skipRender('correction')) return;
+  const [v1] = state.composite.versionIds;
+  const res = await appJson(`/api/composites/versions/${v1}/correct`, {
+    method: 'POST',
+    body: JSON.stringify({
+      idempotencyKey: `smokefix${Date.now()}`,
+      instruction: 'align the sun with the existing reflection; keep the harbor unchanged',
+      mode: 'move',
+      marks: { what: { x: 0.6, y: 0.3, r: 0.05 }, where: { x: 0.4, y: 0.3 } },
+    }),
+  });
+  expect(res.status, `correct → ${JSON.stringify(res.body)}`).toBe(202);
+  const done = await pollJob(res.body!.job.id, state.composite.mode === 'mock' ? 45_000 : 280_000);
+  expect(done.job.status, `correction ended ${done.job.status}: ${done.job.error}`).toBe('complete');
+  expect(done.version?.version_number).toBe(2);
+  expect(done.version?.parent_version_id, 'v2 does not record v1 as its parent').toBe(v1);
+  state.composite.versionIds.push(done.version.id);
+
+  const versions = await asUser('mypix', `composite_versions?select=id,version_number&group_id=eq.${state.composite.groupId}&order=version_number`);
+  expect((versions.body as unknown[]).length, 'the correction did not leave two versions').toBe(2);
+  const old = await page(`/api/composites/media/version/${v1}?variant=native&download=1`);
+  expect(old.status, 'v1 is no longer downloadable after the correction').toBe(302);
+  expect((await fetch(old.headers.get('location')!)).ok, 'v1 native file is gone').toBe(true);
+}, 300_000);
+
+it('17 · a failed job is refunded exactly once', async () => {
+  if (!state.composite.versionIds.length || state.composite.mode !== 'mock') {
+    return console.log('  composite · refund check needs the mock engine, skipped');
+  }
+  const before = await wallet();
+  const res = await appJson(`/api/composites/versions/${state.composite.versionIds[0]}/correct`, {
+    method: 'POST',
+    body: JSON.stringify({ idempotencyKey: `smokefail${Date.now()}`, instruction: `please fail ${MOCK_FAIL_MARKER}`, mode: 'text' }),
+  });
+  expect(res.status, `correct → ${JSON.stringify(res.body)}`).toBe(202);
+  expect(await wallet(), 'the correction was not charged').toBe(before - CREDIT_COSTS.COMPOSITE);
+  const done = await pollJob(res.body!.job.id, 30_000);
+  expect(done.job.status).toBe('failed');
+  expect(done.job.refunded_at, 'failed job has no refund marker').toBeTruthy();
+  // Poll it twice more: a second refund here would mint credits.
+  await appJson(`/api/composites/jobs/${res.body!.job.id}`);
+  await appJson(`/api/composites/jobs/${res.body!.job.id}`);
+  expect(await wallet(), 'a failed job must be refunded exactly once').toBe(before);
+}, 120_000);
+
+it('17b · a transient provider failure is resubmitted once, for free', async () => {
+  if (!state.composite.versionIds.length || state.composite.mode !== 'mock') {
+    return console.log('  composite · retry check needs the mock engine, skipped');
+  }
+  const before = await wallet();
+  const res = await appJson(`/api/composites/versions/${state.composite.versionIds[0]}/correct`, {
+    method: 'POST',
+    body: JSON.stringify({ idempotencyKey: `smokeretry${Date.now()}`, instruction: `retry me ${MOCK_FAIL_ONCE_MARKER}`, mode: 'text' }),
+  });
+  expect(res.status, `correct → ${JSON.stringify(res.body)}`).toBe(202);
+  const done = await pollJob(res.body!.job.id, 45_000);
+  expect(done.job.status, `the resubmitted job ended ${done.job.status}: ${done.job.error}`).toBe('complete');
+  expect(done.job.options.attempts, 'the job was not resubmitted').toBe(2);
+  expect(done.job.refunded_at, 'a job that succeeded on its retry must not be refunded').toBeNull();
+  expect(await wallet(), 'the resubmission was charged again').toBe(before - CREDIT_COSTS.COMPOSITE);
+  state.composite.versionIds.push(done.version.id);
+}, 120_000);
+
+it('18 · deleting the composite removes its rows, gallery entries and private media', async () => {
+  if (!state.composite.groupId) return;
+  const groupId = state.composite.groupId;
+  const del = await appJson(`/api/composites/${groupId}`, { method: 'DELETE' });
+  expect(del.status, `DELETE → ${JSON.stringify(del.body)}`).toBe(200);
+  state.composite.groupId = null;
+  const gone = await asUser('mypix', `composite_groups?select=id&id=eq.${groupId}`);
+  expect((gone.body as unknown[]).length, 'the composite survived its delete').toBe(0);
+  for (const v of state.composite.versionIds) {
+    const g = await asUser('mypix', `generated_images?select=id&composite_version_id=eq.${v}`);
+    expect((g.body as unknown[]).length, 'a gallery row outlived its composite').toBe(0);
+  }
+  expect(await listUnder(`${session().userId}/composites/${groupId}`), 'private media outlived its composite').toEqual([]);
 });

@@ -4,8 +4,10 @@ import { StudioTools } from "@/components/studio/StudioTools";
 import { getBalance } from "@/lib/credits";
 import { CREDIT_COSTS } from "@/types";
 import type { Model, GeneratedImage, GarmentTune } from "@/types";
+import { composeClientConfig } from "@/lib/composite/config";
+import { listGroupCards } from "@/lib/composite/view";
 
-const TOOL_IDS = ["faceswap", "inpaint", "outpaint", "restore", "tryon"] as const;
+const TOOL_IDS = ["faceswap", "inpaint", "outpaint", "restore", "tryon", "compose"] as const;
 type ToolId = (typeof TOOL_IDS)[number];
 
 export default async function StudioPage({
@@ -33,15 +35,23 @@ export default async function StudioPage({
         .select("*")
         .eq("user_id", user.id)
         .order("created_at", { ascending: false }),
+      // Composites live in a private bucket the edit providers cannot fetch, so
+      // they are not offered as sources for the single-image tools.
       supabase
         .from("generated_images")
         .select("*")
         .eq("user_id", user.id)
+        .neq("kind", "composite")
         .order("created_at", { ascending: false })
         .limit(24),
     ]);
 
-  const balance = await getBalance(await createServiceClient(), user.id);
+  const serviceClient = await createServiceClient();
+  const balance = await getBalance(serviceClient, user.id);
+  const composeConfig = composeClientConfig(CREDIT_COSTS.COMPOSITE);
+  const projects = composeConfig.enabled
+    ? await listGroupCards(supabase, serviceClient, user.id)
+    : [];
   const initialTool = TOOL_IDS.includes(tool as ToolId)
     ? (tool as ToolId)
     : undefined;
@@ -52,7 +62,7 @@ export default async function StudioPage({
         <h1 className="text-2xl font-bold mb-1">Studio</h1>
         <p className="text-gray-400 text-sm">
           Edit photos with AI — swap faces, replace backgrounds, uncrop,
-          restore old photos, try on outfits.
+          restore old photos, try on outfits, compose one wide image from many.
         </p>
       </div>
 
@@ -64,6 +74,7 @@ export default async function StudioPage({
         garmentCost={CREDIT_COSTS.GARMENT}
         initialTool={initialTool}
         initialSourceUrl={src}
+        compose={{ config: composeConfig, projects }}
       />
     </div>
   );

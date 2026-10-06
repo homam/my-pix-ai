@@ -14,6 +14,7 @@ const TYPE_LABELS: Record<CreditTransactionType, string> = {
   training: "Training",
   generation: "Generation",
   garment: "Garment",
+  composite: "Composite",
   spend: "Usage",
 };
 

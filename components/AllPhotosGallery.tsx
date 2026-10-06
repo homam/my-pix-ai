@@ -9,8 +9,10 @@ import {
   X,
   Loader2,
   Images,
+  Layers,
 } from "lucide-react";
 import type { GeneratedImage, ImageKind, Model } from "@/types";
+import { exportPlan, nativeLabel } from "@/lib/composite/dimensions";
 
 const KIND_LABELS: Record<ImageKind, string> = {
   generation: "Generations",
@@ -19,7 +21,15 @@ const KIND_LABELS: Record<ImageKind, string> = {
   outpaint: "Uncrops",
   restore: "Restorations",
   tryon: "Try-ons",
+  composite: "Composites",
 };
+
+/** Composite rows carry their project + version in settings (lib/composite/jobs.ts). */
+function compositeLink(img: GeneratedImage): string | null {
+  const s = img.settings;
+  if (img.kind !== "composite" || !s?.compositeGroupId) return null;
+  return `/studio/composites/${s.compositeGroupId}${s.versionNumber ? `?v=${s.versionNumber}` : ""}`;
+}
 
 interface Props {
   images: GeneratedImage[];
@@ -52,7 +62,11 @@ export function AllPhotosGallery({ images: initialImages, models }: Props) {
       : images.filter((img) => (img.kind ?? "generation") === filter);
 
   async function deleteImage(img: GeneratedImage) {
-    if (!confirm("Delete this photo? This can't be undone.")) return;
+    const question =
+      img.kind === "composite"
+        ? "Remove this composite from All photos? It stays in its composite project, where you can still download every version."
+        : "Delete this photo? This can't be undone.";
+    if (!confirm(question)) return;
     setDeleting(true);
     try {
       const res = await fetch(`/api/images/${img.id}`, { method: "DELETE" });
@@ -174,6 +188,13 @@ export function AllPhotosGallery({ images: initialImages, models }: Props) {
             <div className="p-5 space-y-4">
               <div>
                 <p className="text-sm text-gray-200">{detail.prompt}</p>
+                {detail.kind === "composite" && detail.settings?.nativeWidth && detail.settings?.nativeHeight && (
+                  <p className="text-xs text-gray-400 mt-1">
+                    {nativeLabel(
+                      exportPlan({ width: detail.settings.nativeWidth, height: detail.settings.nativeHeight })
+                    )}
+                  </p>
+                )}
                 <p className="text-xs text-gray-500 mt-1">
                   {KIND_LABELS[detail.kind ?? "generation"]}
                   {detail.model_id && modelNames.has(detail.model_id) && (
@@ -196,16 +217,31 @@ export function AllPhotosGallery({ images: initialImages, models }: Props) {
                     Open model
                   </Link>
                 )}
-                <Link
-                  href={`/studio?tool=inpaint&src=${encodeURIComponent(detail.url)}`}
-                  className="inline-flex items-center justify-center gap-2 bg-white/5 hover:bg-white/10 border border-white/10 px-4 py-2 rounded-xl text-sm font-medium transition-colors"
-                  title="Edit in Studio"
-                >
-                  <Wand2 className="w-4 h-4" />
-                  Edit
-                </Link>
+                {compositeLink(detail) ? (
+                  <Link
+                    href={compositeLink(detail)!}
+                    className="flex-1 inline-flex items-center justify-center gap-2 bg-brand-600 hover:bg-brand-500 text-white px-4 py-2 rounded-xl text-sm font-medium transition-colors"
+                    title="Versions, sources and corrections"
+                  >
+                    <Layers className="w-4 h-4" />
+                    Open composite
+                  </Link>
+                ) : (
+                  <Link
+                    href={`/studio?tool=inpaint&src=${encodeURIComponent(detail.url)}`}
+                    className="inline-flex items-center justify-center gap-2 bg-white/5 hover:bg-white/10 border border-white/10 px-4 py-2 rounded-xl text-sm font-medium transition-colors"
+                    title="Edit in Studio"
+                  >
+                    <Wand2 className="w-4 h-4" />
+                    Edit
+                  </Link>
+                )}
                 <a
-                  href={detail.url}
+                  href={
+                    detail.kind === "composite"
+                      ? `${detail.url}?variant=native&download=1`
+                      : detail.url
+                  }
                   download
                   target="_blank"
                   rel="noreferrer"

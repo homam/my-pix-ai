@@ -315,12 +315,12 @@ describe('column-level write privileges', () => {
     if (!creds.supabaseUrl || !creds.serviceKey || !session) return;
     try {
       shapes.push(...(await tableShapes(creds, DEFAULT_SCHEMA)));
-      for (const shape of shapes) {
-        probes.set(
-          shape.table,
-          await probeUpdatableColumns(creds, DEFAULT_SCHEMA, shape, session.accessToken),
-        );
-      }
+      // One PATCH per column; tables in parallel (the composite tables alone
+      // added ~70 columns, which no longer fits the default hook timeout serially).
+      const results = await Promise.all(
+        shapes.map((shape) => probeUpdatableColumns(creds, DEFAULT_SCHEMA, shape, session!.accessToken)),
+      );
+      shapes.forEach((shape, i) => probes.set(shape.table, results[i]!));
       const summary = shapes
         .map((s) => `${s.table}:{${(probes.get(s.table)?.granted ?? []).join(',') || '—'}}`)
         .join(' ');
@@ -328,7 +328,7 @@ describe('column-level write privileges', () => {
     } catch (e) {
       probeError = String(e);
     }
-  });
+  }, 120_000);
 
   it(`enumerated the tables of schema "${DEFAULT_SCHEMA}" from the database`, () => {
     if (!session) throw new Error(`no session: ${sessionError}`);
@@ -380,7 +380,7 @@ describe('storage buckets', () => {
       assertOk(diagnoseBucketProbe(r, { bucket: b.bucket, sites }));
     });
 
-    it(`bucket "${b.bucket}" is ${needsPublic ? 'public — the code hands out unauthenticated URLs' : 'reachable'}`, async () => {
+    it(`bucket "${b.bucket}" is ${needsPublic ? 'public — the code hands out unauthenticated URLs' : 'private — nothing needs public URLs from it'}`, async () => {
       const r = await getBucket(creds, b.bucket);
       if (!r.ok) return; // already reported by the existence assertion
       assertOk(

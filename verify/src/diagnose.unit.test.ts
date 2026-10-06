@@ -157,6 +157,21 @@ describe('incident 2 — the bucket named in code did not exist', () => {
       ).ok,
     ).toBe(true);
   });
+
+  it('fails a bucket that is public although nothing needs public URLs from it', () => {
+    const v = diagnoseBucketVisibility(
+      { public: true },
+      { bucket: 'mypix-composites', needsPublic: false, sites: ['lib/composite/storage.ts:60'] },
+    );
+    expect(v.ok).toBe(false);
+    expect(!v.ok && v.reason).toContain('readable by anyone');
+    expect(
+      diagnoseBucketVisibility(
+        { public: false },
+        { bucket: 'mypix-composites', needsPublic: false, sites: [] },
+      ).ok,
+    ).toBe(true);
+  });
 });
 
 // ── incident 3 — /account queried mypix.credit_transactions ─────────────────

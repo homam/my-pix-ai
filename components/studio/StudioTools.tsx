@@ -12,12 +12,16 @@ import {
   Download,
   X,
   Upload,
+  Layers,
 } from "lucide-react";
 import type { Model, GeneratedImage, GarmentTune } from "@/types";
 import { uploadFile } from "@/lib/uploadClient";
 import { MaskCanvas } from "@/components/studio/MaskCanvas";
+import { ComposeTool } from "@/components/studio/compose/ComposeTool";
+import type { ComposeClientConfig } from "@/lib/composite/config";
+import type { GroupCard } from "@/lib/composite/view";
 
-type Tool = "faceswap" | "inpaint" | "outpaint" | "restore" | "tryon";
+type Tool = "faceswap" | "inpaint" | "outpaint" | "restore" | "tryon" | "compose";
 
 const TOOLS: { id: Tool; label: string; icon: typeof Wand2; blurb: string }[] = [
   {
@@ -50,6 +54,12 @@ const TOOLS: { id: Tool; label: string; icon: typeof Wand2; blurb: string }[] = 
     icon: Shirt,
     blurb: "See yourself wearing any garment",
   },
+  {
+    id: "compose",
+    label: "Compose",
+    icon: Layers,
+    blurb: "Combine several photos (and a video) of one scene into one wide image",
+  },
 ];
 
 const ACCEPTED = { "image/jpeg": [], "image/png": [], "image/webp": [] };
@@ -62,6 +72,7 @@ interface Props {
   garmentCost: number;
   initialTool?: Tool;
   initialSourceUrl?: string;
+  compose: { config: ComposeClientConfig; projects: GroupCard[] };
 }
 
 /** Dropzone + recent-generations picker used by every tool that needs a source image. */
@@ -266,6 +277,7 @@ export function StudioTools({
   garmentCost,
   initialTool,
   initialSourceUrl,
+  compose,
 }: Props) {
   const [tool, setTool] = useState<Tool>(initialTool ?? "faceswap");
   const [error, setError] = useState<string | null>(null);
@@ -459,7 +471,7 @@ export function StudioTools({
     <div className="max-w-3xl">
       {/* Tool tabs */}
       <div className="flex gap-2 flex-wrap mb-8">
-        {TOOLS.map(({ id, label, icon: Icon }) => (
+        {TOOLS.filter((t) => t.id !== "compose" || compose.config.enabled).map(({ id, label, icon: Icon }) => (
           <button
             key={id}
             type="button"
@@ -480,6 +492,9 @@ export function StudioTools({
         {TOOLS.find((t) => t.id === tool)?.blurb}
       </p>
 
+      {tool === "compose" ? (
+        <ComposeTool config={compose.config} projects={compose.projects} creditBalance={creditBalance} />
+      ) : (
       <form onSubmit={onSubmit} className="space-y-5">
         {/* Source image */}
         {tool !== "tryon" && (
@@ -705,8 +720,9 @@ export function StudioTools({
           </p>
         )}
       </form>
+      )}
 
-      <ResultsGrid images={results} />
+      {tool !== "compose" && <ResultsGrid images={results} />}
     </div>
   );
 }
