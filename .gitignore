@@ -6,3 +6,6 @@ node_modules/
 next-env.d.ts
 .vercel
 .claude/
+
+# Private test fixtures (users' photos) — never committed
+verify/fixtures/private/
